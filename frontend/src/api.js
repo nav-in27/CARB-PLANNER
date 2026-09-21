@@ -3,7 +3,7 @@
  * Interfaces with FastAPI backend at /api
  */
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 
 export async function fetchStatus() {
   const res = await fetch(`${API_BASE}/status`);
