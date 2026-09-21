@@ -55,6 +55,7 @@ class DisruptionEvent(BaseModel):
     new_task: Optional[MaintenanceTask] = None
     cancelled_task_id: Optional[str] = None
     overrun_minutes: Optional[int] = 0
+    duration_minutes: Optional[int] = 0
     affected_train_ids: List[str] = Field(default_factory=list)
     affected_loop_id: Optional[str] = None
     delay_minutes: Optional[int] = None

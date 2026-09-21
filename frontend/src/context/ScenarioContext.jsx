@@ -231,6 +231,14 @@ export function ScenarioProvider({ children }) {
   const maintenanceAssignments = scenario?.maintenance_assignments || plan?.maintenance_assignments || [];
   const unassignedMovements = scenario?.unassigned_movements || plan?.unassigned_movements || [];
   const versionNumber = scenario?.version_number || 1;
+  const planVersionTag = scenario?.plan_version_tag || `v${versionNumber}`;
+  const planDiff = scenario?.last_diff || null;
+  const changedObjectIds = useMemo(() => new Set(scenario?.changed_objects || []), [scenario?.changed_objects]);
+
+  const isObjectChanged = useCallback((id) => {
+    if (!id || !changedObjectIds) return false;
+    return changedObjectIds.has(String(id));
+  }, [changedObjectIds]);
 
   const value = {
     scenario,
@@ -252,6 +260,10 @@ export function ScenarioProvider({ children }) {
     maintenanceAssignments,
     unassignedMovements,
     versionNumber,
+    planVersionTag,
+    planDiff,
+    changedObjectIds,
+    isObjectChanged,
     versions,
     auditLog,
     systemHealth,

@@ -42,6 +42,8 @@ export default function OverviewTab({
     conflicts,
     loopUtilization,
     selectEntity,
+    versionNumber,
+    planDiff,
   } = useScenario();
 
   const [selectedHorizon, setSelectedHorizon] = useState('24h');
@@ -249,17 +251,58 @@ export default function OverviewTab({
         </div>
         <div className="status-strip-item">
           <span className="status-strip-label">Plan Version</span>
-          <span className="status-strip-val">
-            v{scenario?.version_number || 1} ({effectivePlan?.solver_status || 'OPTIMAL'})
+          <span className="status-strip-val" style={{ color: 'var(--op-blue)', fontWeight: 800 }}>
+            v{versionNumber || 1} ({effectivePlan?.solver_status || 'OPTIMAL'})
           </span>
         </div>
         <div className="status-strip-item">
-          <span className="status-strip-label">Corridor Status</span>
-          <span className="status-strip-val" style={{ color: 'var(--op-green)' }}>
-            {scenario?.approval_status || 'Feasible'}
+          <span className="status-strip-label">Last Change</span>
+          <span className="status-strip-val" style={{ color: planDiff?.has_changes ? '#b45309' : 'var(--text-primary)' }}>
+            {planDiff?.trigger ? planDiff.trigger.slice(0, 22) : 'Baseline Plan'}
+          </span>
+        </div>
+        <div className="status-strip-item">
+          <span className="status-strip-label">Replanning Status</span>
+          <span className="status-strip-val" style={{ color: 'var(--op-green)', fontWeight: 700 }}>
+            {scenario?.approval_status || 'COMMITTED'}
           </span>
         </div>
       </div>
+
+      {/* Replanning Notification Banner */}
+      {planDiff && planDiff.has_changes && (
+        <div
+          style={{
+            background: 'linear-gradient(90deg, #eff6ff 0%, #f0fdf4 100%)',
+            border: '1.5px solid #3b82f6',
+            borderRadius: '6px',
+            padding: '0.65rem 1rem',
+            marginBottom: '0.85rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.74rem',
+            boxShadow: '0 2px 6px rgba(59, 130, 246, 0.08)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <span className="badge badge-blue" style={{ fontWeight: 800 }}>
+              PLAN VERSION v{versionNumber}
+            </span>
+            <span>
+              Last Change: <strong>{planDiff.trigger || 'Critical Track Defect'}</strong>
+              {planDiff.affected_section && <span> ({planDiff.affected_section})</span>} • Affected: <strong>{planDiff.changed_trains?.length || 0} Trains</strong>, <strong>{planDiff.changed_maintenance?.length || 0} Maintenance Tasks</strong> • Status: <strong style={{ color: 'var(--op-green)' }}>COMMITTED</strong>
+            </span>
+          </div>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => onNavigateTab('planner')}
+            style={{ fontSize: '0.7rem' }}
+          >
+            Open Updated Block Plan
+          </button>
+        </div>
+      )}
 
       {/* Operational KPI Strip */}
       <div className="kpi-strip">

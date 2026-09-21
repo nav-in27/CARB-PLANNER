@@ -130,6 +130,7 @@ class ScenarioRepository:
             actor=actor,
             version_before=version_before,
             version_after=version_after,
+            version_number=version_after,
             details=details or {},
             rationale=rationale,
             reason=rationale,

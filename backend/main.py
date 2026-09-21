@@ -58,7 +58,8 @@ from backend.optimizer.cp_sat import solve_block_plan
 from backend.optimizer.greedy_baseline import solve_greedy
 from backend.optimizer.initial_solution import generate_initial_solution
 from backend.optimizer.lns_engine import run_lns
-from backend.optimizer.lns_repair import apply_disruption
+from backend.optimizer.lns_repair import apply_disruption, identify_affected_region
+from backend.optimizer.plan_diff import compare_plans
 from backend.optimizer.conflict_engine import ConflictEngine, ConflictReport
 from backend.optimizer.loop_allocator import LoopAllocator, LoopUtilizationReport
 from backend.simulation.railway_sim import compute_detailed_kpis, run_ablation_experiment
@@ -117,6 +118,8 @@ class AppState:
         self.risk_predictor = RiskPredictor()
         self.is_loaded: bool = False
         self.baseline_plan: Optional[SchedulePlan] = None
+        self.last_plan_diff: Optional[Dict[str, Any]] = None
+        self.last_disruption_event: Optional[Dict[str, Any]] = None
         
         # Single Source of Truth — Canonical Planning Scenario
         self.corridor: CorridorConfig = get_primary_corridor()
@@ -176,6 +179,7 @@ class ScenarioUpdateRequest(BaseModel):
     corridor_id: Optional[str] = None
     planning_date: Optional[str] = None
     direction: Optional[str] = None
+    selected_direction: Optional[str] = None
     selected_sections: Optional[List[str]] = None
     system_mode: Optional[str] = None
 
@@ -192,6 +196,8 @@ class DisruptionSimulateRequest(BaseModel):
     section_id: str = Field("S04", description="Section affected")
     description: str = Field("Emergency track defect detected", description="Description")
     overrun_minutes: Optional[int] = Field(45, description="Overrun duration in minutes if overrun")
+    duration_minutes: Optional[int] = Field(None, description="Duration in minutes")
+    time_slot: Optional[int] = Field(None, description="Starting time slot (0-95)")
     task_id: Optional[str] = Field(None, description="Task ID if overrun or cancellation")
     train_id: Optional[str] = Field(None, description="Train ID if train delay/cancel")
     loop_id: Optional[str] = Field(None, description="Loop ID if loop blocked")
@@ -207,6 +213,8 @@ class DisruptionApplyRequest(BaseModel):
     section_id: str = Field("S04", description="Section affected")
     description: str = Field("Emergency track defect detected", description="Description")
     overrun_minutes: Optional[int] = Field(45, description="Overrun duration in minutes if overrun")
+    duration_minutes: Optional[int] = Field(None, description="Duration in minutes")
+    time_slot: Optional[int] = Field(None, description="Starting time slot (0-95)")
     task_id: Optional[str] = Field(None, description="Task ID if overrun or cancellation")
     train_id: Optional[str] = Field(None, description="Train ID if train delay/cancel")
     loop_id: Optional[str] = Field(None, description="Loop ID if loop blocked")
@@ -398,7 +406,14 @@ def build_current_scenario() -> dict:
         "disruption_state": {
             "events": [d.model_dump() for d in state.disruption_history],
             "version": scenario_repo.get_current_version_number(),
+            "last_diff": state.last_plan_diff,
+            "changed_objects": state.last_plan_diff.get("changed_object_ids", []) if state.last_plan_diff else [],
+            "last_event": state.last_disruption_event,
         },
+        "last_diff": state.last_plan_diff,
+        "changed_objects": state.last_plan_diff.get("changed_object_ids", []) if state.last_plan_diff else [],
+        "version_history": [v.model_dump() for v in scenario_repo.get_versions(f"SCN_GST_{state.planning_date.replace('-', '_')}")],
+        "audit_log": [a.model_dump() for a in scenario_repo.get_audit_log(50)],
         "conflicts": conflicts_data,
         "loop_utilization": loops_data,
         "solver_status": state.current_plan.solver_status if state.current_plan else "OPTIMAL",
@@ -568,6 +583,16 @@ async def get_status():
     )
 
 
+@app.get("/api/scenario/operational-plan")
+@app.get("/api/scenario/{scenario_id}/operational-plan")
+async def get_operational_plan(scenario_id: Optional[str] = None):
+    """Get the canonical OperationalPlan for the active or requested scenario."""
+    _ensure_loaded()
+    if not state.current_plan:
+        raise HTTPException(status_code=404, detail="No active operational plan found.")
+    return state.current_plan.model_dump()
+
+
 @app.post("/api/demo/reset")
 async def reset_demo():
     """Load the standard demo scenario with synthetic data.
@@ -659,6 +684,8 @@ async def update_scenario(req: ScenarioUpdateRequest):
         state.planning_date = req.planning_date
     if req.direction:
         state.selected_direction = req.direction
+    elif req.selected_direction:
+        state.selected_direction = req.selected_direction
     if req.selected_sections is not None:
         state.selected_sections = req.selected_sections
     if req.system_mode:
@@ -1340,7 +1367,7 @@ async def run_lns_optimization(req: LNSRequest = LNSRequest()):
 
 @app.post("/api/disruptions/simulate")
 async def simulate_disruption_impact(req: DisruptionSimulateRequest):
-    """Simulate a disruption and calculate impact preview without altering baseline plan."""
+    """Simulate a disruption and calculate impact preview without altering the active operational plan."""
     _ensure_loaded()
     if not state.current_plan:
         raise HTTPException(status_code=400, detail="No active plan exists to simulate against.")
@@ -1357,10 +1384,15 @@ async def simulate_disruption_impact(req: DisruptionSimulateRequest):
             req.section_id = d["section_id"]
         if "description" in d:
             req.description = d["description"]
-        if "duration_minutes" in d and not req.overrun_minutes:
+        if "duration_minutes" in d:
+            req.duration_minutes = d["duration_minutes"]
             req.overrun_minutes = d["duration_minutes"]
         if "overrun_minutes" in d:
             req.overrun_minutes = d["overrun_minutes"]
+            if req.duration_minutes is None:
+                req.duration_minutes = d["overrun_minutes"]
+        if "time_slot" in d:
+            req.time_slot = d["time_slot"]
         if "task_id" in d:
             req.task_id = d["task_id"]
         if "train_id" in d:
@@ -1370,70 +1402,107 @@ async def simulate_disruption_impact(req: DisruptionSimulateRequest):
         if "delay_minutes" in d:
             req.delay_minutes = d["delay_minutes"]
 
+    dur_val = req.duration_minutes or req.overrun_minutes or 90
+    start_slot_val = req.time_slot if req.time_slot is not None else 50
+
+    event = DisruptionEvent(
+        disruption_id=f"SIM_{uuid.uuid4().hex[:6].upper()}",
+        disruption_type=req.disruption_type,
+        affected_section=req.section_id,
+        affected_start_slot=start_slot_val,
+        affected_end_slot=start_slot_val + max(1, (dur_val + 14) // 15),
+        description=req.description,
+        overrun_minutes=dur_val,
+        duration_minutes=dur_val,
+        cancelled_task_id=req.task_id,
+        affected_train_ids=[req.train_id] if req.train_id else [],
+        affected_loop_id=req.loop_id,
+    )
+
+    region = identify_affected_region(event, state.current_plan, state.network)
     sec_id = req.section_id
+    core_start = region["core_start_slot"]
+    core_end = region["core_end_slot"]
+
     affected_trains = []
     if state.timetable:
         for s in state.timetable.services:
-            if any(o.section_id == sec_id for o in s.occupancy):
-                affected_trains.append(s.train_number)
+            for occ in s.occupancy:
+                if occ.section_id in region["affected_sections"]:
+                    occ_s = occ.entry_time_min // 15
+                    occ_e = (occ.exit_time_min + 14) // 15
+                    if occ_s < core_end and occ_e > core_start:
+                        affected_trains.append(s.train_number)
+                        break
 
-    affected_tasks = [t.task_id for t in state.tasks if t.section_id == sec_id]
+    affected_tasks = [
+        t.task_id for t in state.tasks
+        if t.section_id in region["affected_sections"]
+    ]
+
     delay_unit = req.overrun_minutes if req.overrun_minutes else (req.delay_minutes or 30)
-    est_delayed_trains = max(1, len(affected_trains) // 2) if affected_trains else 0
+    est_delayed_trains = max(1, len(affected_trains)) if affected_trains else 0
     total_delay = est_delayed_trains * delay_unit
 
     sec = next((s for s in state.network.sections if s.section_id == sec_id), None)
-    is_single = sec.capacity <= 1 if sec else False
+    is_single = (sec.capacity <= 1) if sec else False
 
-    preview = DisruptionImpactPreview(
-        disruption_id=f"SIM_{uuid.uuid4().hex[:6].upper()}",
-        disruption_type=req.disruption_type.value if hasattr(req.disruption_type, "value") else str(req.disruption_type),
-        affected_section=sec_id,
-        description=req.description,
-        trains_affected=len(affected_trains),
-        trains_delayed=est_delayed_trains,
-        trains_rerouted=1 if "branch" in req.description.lower() else 0,
-        trains_cancelled=0,
-        tasks_affected=len(affected_tasks),
-        tasks_displaced=1 if req.disruption_type == DisruptionType.DEPARTMENT_CONFLICT else 0,
-        total_delay_impact_min=total_delay,
-        max_delay_impact_min=delay_unit,
-        affected_train_numbers=affected_trains[:8],
-        affected_task_ids=affected_tasks,
-        affected_sections=[sec_id],
-        affected_loops=[f"LOOP_{sec_id}_CROSSING"] if is_single else [f"LOOP_{sec_id}_COMMON"],
-        resolution_options=[
+    candidate_loops = [
+        {
+            "loop_id": l.loop_id,
+            "station": getattr(l, "station_code", l.station_id),
+            "name": getattr(l, "loop_name", l.loop_id),
+            "csr_m": getattr(l, "csr_length_m", getattr(l, "length_m", 750)),
+        }
+        for l in region["available_loops"]
+    ]
+
+    return {
+        "disruption_id": event.disruption_id,
+        "disruption_type": req.disruption_type.value if hasattr(req.disruption_type, "value") else str(req.disruption_type),
+        "affected_section": sec_id,
+        "description": req.description,
+        "is_feasible": True,
+        "current_plan_unchanged": True,
+        "active_plan_version": scenario_repo.get_current_version_number(),
+        "affected_region": {
+            "disrupted_section": sec_id,
+            "affected_sections": list(region["affected_sections"]),
+            "neighboring_sections": list(region["neighboring_sections"]),
+            "affected_stations": list(region["affected_stations"]),
+            "time_window_slots": [core_start, core_end],
+            "time_window_str": f"{(core_start*15)//60:02d}:{(core_start*15)%60:02d}–{(core_end*15)//60:02d}:{(core_end*15)%60:02d}",
+        },
+        "affected_trains": affected_trains,
+        "affected_tasks": affected_tasks,
+        "trains_affected_count": len(affected_trains),
+        "tasks_affected_count": len(affected_tasks),
+        "estimated_delay_min": total_delay,
+        "loops_required_count": len(candidate_loops),
+        "candidate_loops": candidate_loops,
+        "resolution_options": [
             {
                 "id": "OPT_1",
-                "name": "Crossing Loop Regulation & Local Replan",
-                "description": f"Regulate trains via loops adjacent to {sec_id} while executing maintenance window",
-                "estimated_delay_min": 15,
+                "name": "Crossing Loop Regulation & Localized LNS",
+                "description": f"Regulate trains via loops adjacent to {sec_id} while executing emergency possession",
+                "estimated_delay_min": 18 if not is_single else 35,
                 "recommended": True,
             },
             {
                 "id": "OPT_2",
-                "name": "Single Line Working (SLW)",
-                "description": f"Enforce bi-directional token working under Caution Order on remaining track",
-                "estimated_delay_min": 30,
+                "name": "Single Line Working (SLW) under Caution Order",
+                "description": f"Enforce bi-directional token working on remaining track with speed reduction",
+                "estimated_delay_min": 25,
                 "recommended": not is_single,
             },
         ],
-        estimated_replan_time_sec=1.5,
-        severity="CRITICAL" if req.disruption_type in (DisruptionType.CRITICAL_DEFECT, DisruptionType.TRACK_BLOCKED) or is_single else "WARNING",
-        recommendation=f"Execute localized replan using CP-SAT/LNS. Hold trains at station crossing loop rather than cancelling movements.",
-        feasible_after_apply=True,
-    )
-    res_dict = preview.model_dump()
-    res_dict["affected_trains"] = preview.affected_train_numbers
-    res_dict["affected_tasks"] = preview.affected_task_ids
-    res_dict["is_feasible"] = preview.feasible_after_apply
-    res_dict["estimated_delay_min"] = preview.total_delay_impact_min
-    return res_dict
+        "recommendation": f"Execute localized replanning using CP-SAT/LNS. Hold trains at boundary stations ({', '.join(region['affected_stations'])}) rather than cancelling movements.",
+    }
 
 
 @app.post("/api/disruptions/apply")
 async def apply_disruption_endpoint(req: DisruptionApplyRequest):
-    """Apply disruption to state, increment scenario version, replan, and commit plan."""
+    """Apply disruption directly onto current OperationalPlan via Localized LNS/CP-SAT repair."""
     _ensure_loaded()
     if not state.current_plan or not state.current_plan.is_feasible:
         raise HTTPException(status_code=400, detail="No feasible plan exists to apply disruption onto.")
@@ -1450,10 +1519,15 @@ async def apply_disruption_endpoint(req: DisruptionApplyRequest):
             req.section_id = d["section_id"]
         if "description" in d:
             req.description = d["description"]
-        if "duration_minutes" in d and not req.overrun_minutes:
+        if "duration_minutes" in d:
+            req.duration_minutes = d["duration_minutes"]
             req.overrun_minutes = d["duration_minutes"]
         if "overrun_minutes" in d:
             req.overrun_minutes = d["overrun_minutes"]
+            if req.duration_minutes is None:
+                req.duration_minutes = d["overrun_minutes"]
+        if "time_slot" in d:
+            req.time_slot = d["time_slot"]
         if "task_id" in d:
             req.task_id = d["task_id"]
         if "train_id" in d:
@@ -1466,92 +1540,56 @@ async def apply_disruption_endpoint(req: DisruptionApplyRequest):
     disruption_num = len(state.disruption_history) + 1
     disruption_id = f"DISRUPT_{disruption_num:03d}"
     
+    # Save previous plan for auditing & diffing
     state.previous_plan = copy.deepcopy(state.current_plan)
 
-    new_task = None
-    cancelled_id = None
-    affected_train_ids = []
-
-    if req.disruption_type in (DisruptionType.CRITICAL_DEFECT, DisruptionType.SIGNAL_FAILURE, DisruptionType.TRACK_BLOCKED):
-        sec = next((s for s in state.network.sections if s.section_id == req.section_id), None)
-        new_task = MaintenanceTask(
-            task_id=f"T_EMRG_{disruption_num:02d}",
-            department=Department.ENGINEERING if req.disruption_type != DisruptionType.SIGNAL_FAILURE else Department.SNT,
-            task_type=TaskType.TRACK_MAINTENANCE if req.disruption_type != DisruptionType.SIGNAL_FAILURE else TaskType.SIGNAL_MAINTENANCE,
-            section_id=req.section_id,
-            priority=TaskPriority.CRITICAL,
-            criticality=TaskPriority.CRITICAL,
-            asset_age=sec.asset_age_years if sec else 10.0,
-            condition_score=0.2,
-            crew_size=6,
-            crew_available=True,
-            complexity=0.8,
-            weather_factor=1.0,
-            historical_duration_min=90,
-            earliest_start_slot=0,
-            deadline_slot=40,
-            risk_score=0.9,
-            risk_level=RiskLevel.CRITICAL,
-            status=TaskStatus.PENDING,
-            is_deferrable=False,
-            defect_count=5,
-            days_since_maintenance=0,
-        )
-        p50, p90 = state.duration_predictor.predict(new_task)
-        new_task.predicted_p50_min = p50
-        new_task.predicted_p90_min = p90
-        state.tasks.append(new_task)
-
-    elif req.disruption_type == DisruptionType.MAINTENANCE_OVERRUN:
-        target_t = next((t for t in state.tasks if t.task_id == req.task_id), None)
-        if target_t and target_t.allocated_end_slot is not None:
-            extra_slots = (req.overrun_minutes or 45) // 15
-            target_t.allocated_end_slot += extra_slots
-            target_t.deadline_slot = max(target_t.deadline_slot, target_t.allocated_end_slot + 4)
-
-    elif req.disruption_type == DisruptionType.BLOCK_CANCELLATION:
-        cancelled_id = req.task_id
-        target_t = next((t for t in state.tasks if t.task_id == req.task_id), None)
-        if target_t:
-            target_t.status = TaskStatus.DEFERRED
-            target_t.allocated_start_slot = None
-            target_t.allocated_end_slot = None
-
-    elif req.disruption_type == DisruptionType.TRAIN_DELAY:
-        target_train = next((t for t in state.trains if t.train_id == req.train_id), None)
-        if target_train:
-            target_train.actual_delay_min += (req.delay_minutes or 30)
-            affected_train_ids.append(target_train.train_id)
+    dur_val = req.duration_minutes or req.overrun_minutes or 90
+    start_slot_val = req.time_slot if req.time_slot is not None else 50
 
     event = DisruptionEvent(
         disruption_id=disruption_id,
         disruption_type=req.disruption_type,
         affected_section=req.section_id,
+        affected_start_slot=start_slot_val,
+        affected_end_slot=start_slot_val + max(1, (dur_val + 14) // 15),
         description=req.description,
-        new_task=new_task,
-        cancelled_task_id=cancelled_id,
-        overrun_minutes=req.overrun_minutes,
-        affected_train_ids=affected_train_ids,
+        overrun_minutes=dur_val,
+        duration_minutes=dur_val,
+        cancelled_task_id=req.task_id,
+        affected_train_ids=[req.train_id] if req.train_id else [],
         affected_loop_id=req.loop_id,
         severity="CRITICAL" if req.disruption_type in (DisruptionType.CRITICAL_DEFECT, DisruptionType.TRACK_BLOCKED) else "WARNING",
     )
-    state.disruption_history.append(event)
 
-    # Re-solve operational plan
-    plan_tasks = copy.deepcopy(state.tasks)
-    plan_trains = copy.deepcopy(state.trains)
-    new_plan = generate_initial_solution(
+    # Execute Localized LNS / CP-SAT Replanning directly on current committed plan
+    repaired_plan, repair_info = apply_disruption(
+        disruption=event,
+        current_plan=state.current_plan,
+        tasks=state.tasks,
+        trains=state.trains,
         network=state.network,
-        tasks=plan_tasks,
-        trains=plan_trains,
         services=state.timetable.services if state.timetable else None,
-        horizon_slots=state.current_plan.horizon_slots,
-        time_limit_sec=15.0,
     )
-    state.current_plan = new_plan
+    plan_diff = repair_info.get("plan_diff") or repair_info.get("diff") or {}
 
-    # Update state tasks
-    task_status_map = {t.task_id: t for t in new_plan.tasks}
+    if not repaired_plan.is_feasible:
+        # Do not overwrite valid plan if solver fails!
+        return {
+            "status": "NO_FEASIBLE_RECOVERY_PLAN",
+            "is_feasible": False,
+            "message": "No feasible recovery plan found without violating safety headway constraints.",
+            "repair_info": repair_info,
+            "plan": state.current_plan.model_dump(),
+        }
+
+    # Commit atomic update
+    state.disruption_history.append(event)
+    state.current_plan = repaired_plan
+    state.last_plan_diff = plan_diff
+    state.last_disruption_event = event.model_dump()
+
+    # Synchronize state tasks
+    task_status_map = {t.task_id: t for t in repaired_plan.tasks}
     for t in state.tasks:
         if t.task_id in task_status_map:
             updated = task_status_map[t.task_id]
@@ -1559,21 +1597,32 @@ async def apply_disruption_endpoint(req: DisruptionApplyRequest):
             t.allocated_start_slot = updated.allocated_start_slot
             t.allocated_end_slot = updated.allocated_end_slot
 
+    # If an emergency task was scheduled, append to state.tasks if not already present
+    for t in repaired_plan.tasks:
+        if t.task_id.startswith("T_EMRG_") and not any(et.task_id == t.task_id for et in state.tasks):
+            state.tasks.append(t)
+
+    # Synchronize state train services
+    if state.timetable and repaired_plan.train_assignments:
+        train_assign_map = {ta["train_number"]: ta for ta in repaired_plan.train_assignments if "train_number" in ta}
+        for svc in state.timetable.services:
+            if svc.train_number in train_assign_map:
+                ta = train_assign_map[svc.train_number]
+                svc.actual_delay_min = ta.get("delay_min", 0)
+                svc.is_held = ta.get("is_held", False)
+                svc.held_at_station = ta.get("held_at_station")
+                svc.loop_used = ta.get("loop_used")
+                svc.is_rerouted = ta.get("is_rerouted", False)
+                svc.planner_decision = ta.get("reason")
+
     scenario_id = f"SCN_GST_{state.planning_date.replace('-', '_')}"
     version_entry = scenario_repo.commit_version(
         scenario_id=scenario_id,
-        plan=new_plan,
-        reason=f"Applied disruption: {event.disruption_type.value} on {event.affected_section} ({event.description})",
+        plan=repaired_plan,
+        reason=f"Applied localized disruption: {event.disruption_type.value} on {event.affected_section} ({event.description})",
         trigger="DISRUPTION_APPLY",
         actor="system",
-        diff_summary={
-            "disruption_type": event.disruption_type.value,
-            "affected_section": event.affected_section,
-            "new_tasks": 1 if new_task else 0,
-            "allocations_count": len(new_plan.allocations),
-            "train_delay_min": new_plan.kpis.total_train_delay_min,
-            "asset_availability_pct": new_plan.kpis.asset_availability_pct,
-        }
+        diff_summary=plan_diff,
     )
 
     return {
@@ -1582,7 +1631,11 @@ async def apply_disruption_endpoint(req: DisruptionApplyRequest):
         "version_number": version_entry.version_number,
         "version_id": version_entry.version_id,
         "disruption": event.model_dump(),
-        "plan": new_plan.model_dump(),
+        "diff": plan_diff,
+        "diff_summary": plan_diff,
+        "plan": repaired_plan.model_dump(),
+        "repair_info": repair_info,
+        "message": f"Operational Plan updated to v{version_entry.version_number} via CP-SAT/LNS localized repair.",
     }
 
 

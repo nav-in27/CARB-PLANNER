@@ -64,6 +64,7 @@ function AppContent() {
           <DisruptionsTab
             onOpenOverrideModal={() => setApprovalModalMode('override')}
             onApprovePlan={() => setApprovalModalMode('approve')}
+            onNavigateTab={setActiveTab}
           />
         )}
 

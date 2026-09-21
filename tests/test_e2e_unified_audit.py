@@ -38,7 +38,7 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def reset_scenario_state():
     """Ensure state is cleanly initialized before each test."""
-    _ensure_loaded()
+    client.post("/api/demo/reset")
 
 
 def test_01_scenario_single_source_of_truth():

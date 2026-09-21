@@ -23,7 +23,7 @@ const minToTime = (min) => {
 };
 
 export default function MaintenanceQueueTab() {
-  const { scenario, corridor, tasks, selectedEntity, selectEntity, updateTask } = useScenario();
+  const { scenario, corridor, tasks, selectedEntity, selectEntity, updateTask, planDiff, isObjectChanged } = useScenario();
   const [selectedDept, setSelectedDept] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTask, setActiveTask] = useState(null);
@@ -33,14 +33,6 @@ export default function MaintenanceQueueTab() {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
   };
-
-  // Synchronize with external selection if a task was clicked in Map or Planner
-  React.useEffect(() => {
-    if (selectedEntity?.type === 'task' && selectedEntity.data) {
-      const found = normalizedTasks.find((t) => t.taskId === selectedEntity.id);
-      if (found) setActiveTask(found);
-    }
-  }, [selectedEntity]);
 
   // Normalize tasks directly from live scenario tasks
   const rawTasks = tasks && tasks.length > 0 ? tasks : [];
@@ -61,7 +53,14 @@ export default function MaintenanceQueueTab() {
     const eMin = t.end_min != null ? t.end_min : (t.allocated_end_slot != null ? t.allocated_end_slot * 15 : (t.deadline_slot != null ? t.deadline_slot * 15 : null));
     const requestedWindow = t.requestedWindow || (t.earliest_start_slot != null && t.deadline_slot != null ? `${minToTime(t.earliest_start_slot * 15)}–${minToTime(t.deadline_slot * 15)}` : '08:00–12:00');
     const plannedBlock = sMin != null && eMin != null ? `${minToTime(sMin)}–${minToTime(eMin)}` : (t.plannedBlock || 'Allocated');
-    const status = t.status || 'SCHEDULED';
+
+    // Check if changed in latest replan diff
+    const changedMeta = planDiff?.changed_maintenance?.find((m) => m.task_id === taskId);
+    const isChanged = Boolean(changedMeta || (isObjectChanged && isObjectChanged(taskId)));
+    const previousWindow = changedMeta?.old_window || null;
+    const replanReason = changedMeta?.reason || (isChanged ? 'Shifted due to localized emergency disruption' : null);
+    const shiftMin = changedMeta?.shift_min || 0;
+    const status = isChanged ? 'REPLANNED' : (t.status || 'SCHEDULED');
 
     let img = REAL_RAILWAY_IMAGES?.track_maintenance;
     if (dept.toLowerCase().includes('traction') || dept === 'TRD') {
@@ -93,6 +92,10 @@ export default function MaintenanceQueueTab() {
       p50Duration: p50,
       p90Duration: p90,
       status,
+      isChanged,
+      previousWindow,
+      replanReason,
+      shiftMin,
       image: t.image || img,
       explanation,
       raw: t,
@@ -301,12 +304,21 @@ export default function MaintenanceQueueTab() {
                       </span>
                     </td>
                     <td>{r.risk}</td>
-                    <td>{r.requestedWindow}</td>
+                    <td>
+                      <div>{r.requestedWindow}</div>
+                      {r.isChanged && r.previousWindow && (
+                        <div style={{ fontSize: '0.62rem', color: '#b45309', fontWeight: 600 }}>
+                          Prev: {r.previousWindow}
+                        </div>
+                      )}
+                    </td>
                     <td><strong>{r.p90Duration}</strong></td>
                     <td>
                       <span
                         className={`badge ${
-                          r.status === 'Approved'
+                          r.status === 'REPLANNED'
+                            ? 'badge-amber'
+                            : r.status === 'Approved'
                             ? 'badge-green'
                             : r.status === 'Planned'
                             ? 'badge-blue'
@@ -314,8 +326,9 @@ export default function MaintenanceQueueTab() {
                             ? 'badge-red'
                             : 'badge-amber'
                         }`}
+                        style={r.status === 'REPLANNED' ? { background: '#fef3c7', color: '#92400e', borderColor: '#fde68a', fontWeight: 800 } : undefined}
                       >
-                        {r.status}
+                        {r.status === 'REPLANNED' ? '↻ REPLANNED' : r.status}
                       </span>
                     </td>
                   </tr>
@@ -336,22 +349,39 @@ export default function MaintenanceQueueTab() {
                 <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                   {activeTask.taskId}
                 </h3>
-                <span className={`badge ${activeTask.status === 'Approved' ? 'badge-green' : 'badge-blue'}`}>{activeTask.status}</span>
+                <span className={`badge ${activeTask.status === 'REPLANNED' ? 'badge-amber' : activeTask.status === 'Approved' ? 'badge-green' : 'badge-blue'}`}>
+                  {activeTask.status === 'REPLANNED' ? '↻ REPLANNED' : activeTask.status}
+                </span>
               </div>
               <p style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)', marginTop: '0.1rem' }}>
                 {activeTask.taskType}
               </p>
             </div>
-
-            <button
-              className="btn btn-sm"
-              style={{ padding: '0.2rem 0.4rem', border: 'none' }}
-              onClick={() => setActiveTask(null)}
-            >
+            <button className="btn btn-sm" onClick={() => setActiveTask(null)}>
               <X size={14} />
             </button>
           </div>
 
+          {/* Disruption Replan Callout if shifted */}
+          {activeTask.isChanged && (
+            <div style={{ background: '#fef3c7', border: '1.5px solid #fde68a', borderRadius: '4px', padding: '0.65rem 0.85rem', fontSize: '0.74rem', color: '#92400e' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 800, marginBottom: '0.25rem' }}>
+                <AlertTriangle size={14} color="#b45309" />
+                <span>REPLANNED BY LOCALIZED DISRUPTION ENGINE</span>
+              </div>
+              <div style={{ marginBottom: '0.15rem' }}>
+                Previous Window: <span style={{ textDecoration: 'line-through' }}>{activeTask.previousWindow || 'Initial slot'}</span>
+              </div>
+              <div style={{ marginBottom: '0.15rem' }}>
+                Current Window: <strong>{activeTask.plannedBlock}</strong> (Shift: {activeTask.shiftMin > 0 ? `+${activeTask.shiftMin}m` : `${activeTask.shiftMin}m`})
+              </div>
+              {activeTask.replanReason && (
+                <div style={{ marginTop: '0.25rem', fontStyle: 'italic' }}>
+                  Reason: {activeTask.replanReason}
+                </div>
+              )}
+            </div>
+          )}
           {/* Contextual Real Railway Thumbnail */}
           {activeTask.image && (
             <div className="ref-image-card">

@@ -222,7 +222,7 @@ export default function NetworkTab() {
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [loadData, scenario?.version_number]);
 
   // Initialize Leaflet Map
   useEffect(() => {

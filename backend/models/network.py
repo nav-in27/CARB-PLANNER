@@ -9,7 +9,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class AssetType(str, Enum):
@@ -175,8 +175,11 @@ class LoopLine(BaseModel):
     loop_id: str = Field(..., description="e.g. LOOP_VM_01")
     station_id: str = Field(..., description="Host station ID")
     station_name: str = Field("")
+    station_code: Optional[str] = None
+    loop_name: Optional[str] = None
     track_type: TrackType = TrackType.LOOP_LINE
     length_m: int = Field(750, ge=100, description="CSR (Clear Standing Room) in meters")
+    csr_length_m: Optional[int] = None
     capacity_trains: int = Field(1, ge=1)
     is_electrified: bool = True
     speed_limit_kmh: int = Field(30, description="Turnout speed limit (typically 30 or 50 km/h in IR)")
@@ -189,6 +192,16 @@ class LoopLine(BaseModel):
     source_url: str = Field("https://sr.indianrailways.gov.in")
     verification_status: str = Field("publicly verified")
     provenance: Optional[DataProvenance] = None
+
+    @model_validator(mode="after")
+    def _fill_defaults(self):
+        if not self.station_code:
+            self.station_code = self.station_id
+        if not self.loop_name:
+            self.loop_name = self.loop_id
+        if not self.csr_length_m:
+            self.csr_length_m = self.length_m
+        return self
 
 
 class Section(BaseModel):

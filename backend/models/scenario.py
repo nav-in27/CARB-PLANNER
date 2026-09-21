@@ -93,6 +93,7 @@ class AuditLogEntry(BaseModel):
     actor: str = "system"  # system | controller_name
     version_before: Optional[int] = None
     version_after: Optional[int] = None
+    version_number: Optional[int] = None
     details: Dict[str, Any] = Field(default_factory=dict)
     rationale: str = ""
     reason: Optional[str] = None

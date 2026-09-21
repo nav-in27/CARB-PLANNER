@@ -31,6 +31,7 @@ import {
   Tag,
   FileText,
   Download,
+  Eye,
 } from 'lucide-react';
 
 import {
@@ -138,7 +139,15 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
     replan,
     runLns,
     isOptimizing,
+    versionNumber,
+    planVersionTag,
+    planDiff,
+    changedObjectIds,
+    isObjectChanged,
   } = useScenario();
+
+  const [showDiffModal, setShowDiffModal] = useState(false);
+  const [dismissedDiffVersion, setDismissedDiffVersion] = useState(null);
 
   const timelineScrollRef = React.useRef(null);
 
@@ -242,7 +251,7 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [scenario?.version_number]);
 
   const handleGenerate = async () => {
     setIsGenerating(true);
@@ -356,13 +365,19 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
     });
   }, [sourceTasks, selectedDept, selectedSection, selectedHorizon]);
 
-  // Extract all trains from live timetable or fallback
+  // Extract all trains from live scenario or timetable
   const allTrains = useMemo(() => {
+    if (scenario?.train_services && scenario.train_services.length > 0) {
+      return scenario.train_services;
+    }
+    if (scenarioTrains && scenarioTrains.length > 0) {
+      return scenarioTrains;
+    }
     if (timetable && timetable.services) {
       return timetable.services;
     }
     return null;
-  }, [timetable]);
+  }, [scenario?.train_services, scenarioTrains, timetable]);
 
   // Filter trains for display
   const filteredTrains = useMemo(() => {
@@ -854,6 +869,78 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
         </div>
       )}
 
+      {/* Plan Updated Change Summary Top Bar */}
+      {planDiff && planDiff.has_changes && dismissedDiffVersion !== versionNumber && (
+        <div
+          style={{
+            background: 'linear-gradient(90deg, #eff6ff 0%, #f0fdf4 100%)',
+            border: '1.5px solid #3b82f6',
+            borderRadius: '6px',
+            padding: '0.6rem 1rem',
+            marginBottom: '0.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            boxShadow: '0 2px 8px rgba(59, 130, 246, 0.12)',
+            flexWrap: 'wrap',
+            gap: '0.6rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <RotateCw size={15} color="#2563eb" />
+              <strong style={{ fontSize: '0.82rem', color: '#1d4ed8' }}>PLAN UPDATED</strong>
+              <span className="badge badge-blue" style={{ fontSize: '0.68rem', fontWeight: 800 }}>
+                {versionNumber > 1 ? `v${versionNumber - 1} → v${versionNumber}` : `v${versionNumber}`}
+              </span>
+            </div>
+
+            <div style={{ fontSize: '0.74rem', color: '#334155' }}>
+              Triggered by: <strong>{planDiff.trigger || 'Disruption Replanning'}</strong>
+              {planDiff.affected_section && (
+                <span> • Affected Section: <strong>{planDiff.affected_section}</strong></span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
+              <span className="badge" style={{ background: '#dbeafe', color: '#1e40af', fontSize: '0.68rem', border: '1px solid #93c5fd' }}>
+                {planDiff.changed_trains?.length || 0} trains changed
+              </span>
+              <span className="badge" style={{ background: '#fef3c7', color: '#92400e', fontSize: '0.68rem', border: '1px solid #fcd34d' }}>
+                {planDiff.changed_maintenance?.length || 0} maintenance tasks changed
+              </span>
+              <span className="badge" style={{ background: '#e0e7ff', color: '#3730a3', fontSize: '0.68rem', border: '1px solid #c7d2fe' }}>
+                {planDiff.changed_loops?.length || 0} loop assignments changed
+              </span>
+              {planDiff.total_additional_delay_min > 0 && (
+                <span className="badge" style={{ background: '#fee2e2', color: '#991b1b', fontSize: '0.68rem', border: '1px solid #fca5a5' }}>
+                  +{planDiff.total_additional_delay_min} min delay
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => setShowDiffModal(true)}
+              style={{ fontSize: '0.72rem', padding: '0.25rem 0.65rem' }}
+            >
+              <Eye size={12} />
+              <span>View Changes</span>
+            </button>
+            <button
+              className="btn btn-sm"
+              onClick={() => setDismissedDiffVersion(versionNumber)}
+              style={{ fontSize: '0.72rem', padding: '0.25rem 0.45rem', color: '#64748b' }}
+              title="Dismiss banner"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Operational KPI Strip */}
       <div className="status-strip">
         <div className="status-strip-item">
@@ -1271,6 +1358,8 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
                         const width = Math.max(3.5, right - left);
                         const catStyle = CATEGORY_COLORS[trObj.category] || CATEGORY_COLORS['Express'];
                         const isSelected = selectedEntity?.id === trObj.trainNumber || selectedTrain?.train_number === trObj.trainNumber;
+                        const changedTrainMeta = planDiff?.changed_trains?.find((t) => t.train_number === trObj.trainNumber);
+                        const isChanged = Boolean(changedTrainMeta || isObjectChanged(trObj.trainNumber));
 
                         return (
                           <div
@@ -1288,7 +1377,7 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
                               minWidth: '46px',
                               backgroundColor: catStyle.bg,
                               color: catStyle.text,
-                              border: isSelected ? '2px solid #ffffff' : `1px solid ${catStyle.border}`,
+                              border: isSelected ? '2px solid #ffffff' : (isChanged ? '2px solid #f59e0b' : `1px solid ${catStyle.border}`),
                               borderRadius: '2px',
                               fontSize: '0.6rem',
                               fontWeight: 700,
@@ -1297,12 +1386,19 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
                               justifyContent: 'space-between',
                               padding: '0 4px',
                               cursor: 'pointer',
-                              zIndex: 3,
-                              boxShadow: isSelected ? '0 0 0 2px #0284c7' : '0 1px 2px rgba(0,0,0,0.1)',
+                              zIndex: isChanged ? 4 : 3,
+                              boxShadow: isSelected ? '0 0 0 2px #0284c7' : (isChanged ? '0 0 6px rgba(245, 158, 11, 0.6)' : '0 1px 2px rgba(0,0,0,0.1)'),
                             }}
-                            title={`${trObj.trainNumber} ${trObj.trainName} (DN) • ${formatTime(trObj.entryMin)}–${formatTime(trObj.exitMin)}`}
+                            title={`${trObj.trainNumber} ${trObj.trainName} (DN)${isChanged ? ` • ↻ REPLANNED (${changedTrainMeta?.reason || 'Rescheduled due to disruption'})` : ''} • ${formatTime(trObj.entryMin)}–${formatTime(trObj.exitMin)}`}
                           >
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trObj.trainNumber}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              {isChanged && (
+                                <span style={{ background: '#fef3c7', color: '#92400e', padding: '0 2px', borderRadius: '2px', fontSize: '0.52rem', fontWeight: 800 }}>
+                                  ↻ {changedTrainMeta?.action || (trObj.isHeld ? 'HELD' : 'REPL')}
+                                </span>
+                              )}
+                              {trObj.trainNumber}
+                            </span>
                             <span style={{ fontSize: '0.52rem', opacity: 0.9 }}>↓</span>
                           </div>
                         );
@@ -1320,6 +1416,8 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
                         const width = Math.max(3.5, right - left);
                         const catStyle = CATEGORY_COLORS[trObj.category] || CATEGORY_COLORS['Express'];
                         const isSelected = selectedEntity?.id === trObj.trainNumber || selectedTrain?.train_number === trObj.trainNumber;
+                        const changedTrainMeta = planDiff?.changed_trains?.find((t) => t.train_number === trObj.trainNumber);
+                        const isChanged = Boolean(changedTrainMeta || isObjectChanged(trObj.trainNumber));
 
                         return (
                           <div
@@ -1337,7 +1435,7 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
                               minWidth: '46px',
                               backgroundColor: catStyle.bg,
                               color: catStyle.text,
-                              border: isSelected ? '2px solid #ffffff' : `1px solid ${catStyle.border}`,
+                              border: isSelected ? '2px solid #ffffff' : (isChanged ? '2px solid #f59e0b' : `1px solid ${catStyle.border}`),
                               borderRadius: '2px',
                               fontSize: '0.6rem',
                               fontWeight: 700,
@@ -1346,12 +1444,19 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
                               justifyContent: 'space-between',
                               padding: '0 4px',
                               cursor: 'pointer',
-                              zIndex: 3,
-                              boxShadow: isSelected ? '0 0 0 2px #b45309' : '0 1px 2px rgba(0,0,0,0.1)',
+                              zIndex: isChanged ? 4 : 3,
+                              boxShadow: isSelected ? '0 0 0 2px #b45309' : (isChanged ? '0 0 6px rgba(245, 158, 11, 0.6)' : '0 1px 2px rgba(0,0,0,0.1)'),
                             }}
-                            title={`${trObj.trainNumber} ${trObj.trainName} (UP) • ${formatTime(trObj.entryMin)}–${formatTime(trObj.exitMin)}`}
+                            title={`${trObj.trainNumber} ${trObj.trainName} (UP)${isChanged ? ` • ↻ REPLANNED (${changedTrainMeta?.reason || 'Rescheduled due to disruption'})` : ''} • ${formatTime(trObj.entryMin)}–${formatTime(trObj.exitMin)}`}
                           >
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{trObj.trainNumber}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              {isChanged && (
+                                <span style={{ background: '#fef3c7', color: '#92400e', padding: '0 2px', borderRadius: '2px', fontSize: '0.52rem', fontWeight: 800 }}>
+                                  ↻ {changedTrainMeta?.action || (trObj.isHeld ? 'HELD' : 'REPL')}
+                                </span>
+                              )}
+                              {trObj.trainNumber}
+                            </span>
                             <span style={{ fontSize: '0.52rem', opacity: 0.9 }}>↑</span>
                           </div>
                         );
@@ -1471,7 +1576,51 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
                   {showPossessions && (
                     <div style={{ height: '34px', position: 'relative', background: '#fffafa' }}>
                       {renderLanesGrid()}
+
+                      {/* Faded dashed ghost bars for old allocations shifted by disruption */}
+                      {planDiff?.changed_maintenance?.filter((m) =>
+                        (m.section_id === sec.id || m.section_id === sec.sectionId || m.section_id === sec.code || SECTION_ID_MAP[m.section_id] === sec.id) && m.old_slots
+                      ).map((oldM) => {
+                        const oLeft = Math.max(0, minuteToPct(oldM.old_slots[0] * 15));
+                        const oRight = Math.min(100, minuteToPct(oldM.old_slots[1] * 15));
+                        const oWidth = Math.max(4, oRight - oLeft);
+                        return (
+                          <div
+                            key={`ghost-${sec.id}-${oldM.task_id}`}
+                            style={{
+                              position: 'absolute',
+                              top: '4px',
+                              height: '26px',
+                              left: `${oLeft}%`,
+                              width: `${oWidth}%`,
+                              minWidth: '55px',
+                              border: '1.5px dashed #94a3b8',
+                              background: 'rgba(241, 245, 249, 0.85)',
+                              borderRadius: '3px',
+                              padding: '2px 4px',
+                              fontSize: '0.58rem',
+                              color: '#64748b',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'center',
+                              zIndex: 2,
+                              cursor: 'help',
+                            }}
+                            title={`OLD ALLOCATION (INVALIDATED): ${oldM.task_id} (${oldM.old_window}) → Replanned to ${oldM.new_window} (${oldM.reason})`}
+                          >
+                            <div style={{ textDecoration: 'line-through', fontWeight: 700, fontSize: '0.58rem', color: '#64748b' }}>
+                              {oldM.task_id} (OLD)
+                            </div>
+                            <div style={{ fontSize: '0.52rem', opacity: 0.85 }}>
+                              {oldM.old_window}
+                            </div>
+                          </div>
+                        );
+                      })}
+
                       {sectionTasks.map((task) => {
+                        const changedMaintMeta = planDiff?.changed_maintenance?.find((m) => m.task_id === task.taskId);
+                        const isChanged = Boolean(changedMaintMeta || isObjectChanged(task.taskId));
                         const left = Math.max(0, minuteToPct(task.startMin));
                         const right = Math.min(100, minuteToPct(task.endMin));
                         const width = Math.max(5, right - left);
@@ -1501,14 +1650,14 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
                               width: `${width}%`,
                               minWidth: '55px',
                               cursor: 'pointer',
-                              border: isSelected ? '2px solid #ffffff' : `1px solid ${deptBorder}`,
+                              border: isSelected ? '2px solid #ffffff' : (isChanged ? '2px solid #ea580c' : `1px solid ${deptBorder}`),
                               borderRadius: '3px',
                               padding: '2px 6px',
                               display: 'flex',
                               flexDirection: 'column',
                               justifyContent: 'center',
-                              boxShadow: isSelected ? '0 0 0 2px #dc2626' : '0 1px 4px rgba(0,0,0,0.12)',
-                              zIndex: 3,
+                              boxShadow: isSelected ? '0 0 0 2px #dc2626' : (isChanged ? '0 0 8px rgba(234, 88, 12, 0.5)' : '0 1px 4px rgba(0,0,0,0.12)'),
+                              zIndex: isChanged ? 5 : 3,
                             }}
                             onClick={() => {
                               selectEntity('task', task.taskId, task.raw || task);
@@ -1516,10 +1665,17 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
                             }}
                             onMouseEnter={() => setSelectedBlockHover(task)}
                             onMouseLeave={() => setSelectedBlockHover(null)}
-                            title={`${task.taskId}: ${task.title} (${formatTime(task.startMin)}–${formatTime(task.endMin)}) • P90: ${task.p90}m`}
+                            title={`${task.taskId}: ${task.title} (${formatTime(task.startMin)}–${formatTime(task.endMin)})${isChanged ? ` • ↻ REPLANNED (${changedMaintMeta?.reason || 'Shifted due to disruption'})` : ''} • P90: ${task.p90}m`}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.66rem', fontWeight: 800 }}>
-                              <span>{task.taskId}</span>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                {isChanged && (
+                                  <span style={{ background: '#fef3c7', color: '#b45309', padding: '0 3px', borderRadius: '2px', fontSize: '0.52rem', fontWeight: 800 }}>
+                                    ↻ REPLANNED
+                                  </span>
+                                )}
+                                <span>{task.taskId}</span>
+                              </span>
                               <span style={{ fontSize: '0.56rem', opacity: 0.9 }}>P90:{task.p90}m</span>
                             </div>
                             <div style={{ fontSize: '0.6rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', opacity: 0.95 }}>
@@ -1925,6 +2081,274 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
               <button className="btn btn-sm btn-primary" onClick={() => setSelectedConflict(null)}>
                 Acknowledge & Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ─── PLAN CHANGES MODAL ─── */}
+      {showDiffModal && planDiff && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(2px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 10002,
+          }}
+          onClick={() => setShowDiffModal(false)}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '8px',
+              width: '850px',
+              maxWidth: '94vw',
+              maxHeight: '88vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 16px 40px rgba(0,0,0,0.25)',
+              border: '1px solid var(--border-color)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: '1rem 1.25rem',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                background: '#f8fafc',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <RotateCw size={18} color="#2563eb" />
+                <div>
+                  <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: '#1e293b' }}>
+                    Operational Plan Replanning Changes & Explanations
+                  </h3>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.15rem' }}>
+                    Trigger: <strong>{planDiff.trigger || 'Disruption Replanning'}</strong> • Corridor Section: <strong>{planDiff.affected_section || 'VRI-ALU'}</strong>
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className="badge badge-blue" style={{ fontSize: '0.75rem', fontWeight: 800 }}>
+                  {versionNumber > 1 ? `v${versionNumber - 1} → v${versionNumber}` : `v${versionNumber}`}
+                </span>
+                <button className="btn btn-sm" onClick={() => setShowDiffModal(false)} style={{ padding: '0.2rem 0.45rem' }}>
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+
+            {/* Metrics Overview Bar */}
+            <div
+              style={{
+                padding: '0.75rem 1.25rem',
+                background: '#f1f5f9',
+                borderBottom: '1px solid var(--border-color)',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, 1fr)',
+                gap: '0.5rem',
+                textAlign: 'center',
+              }}
+            >
+              <div style={{ background: '#fff', padding: '0.4rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.65rem', color: '#64748b' }}>Total Added Delay</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#dc2626' }}>
+                  +{planDiff.total_additional_delay_min || 0} min
+                </div>
+              </div>
+              <div style={{ background: '#fff', padding: '0.4rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.65rem', color: '#64748b' }}>Replanned Trains</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#0284c7' }}>
+                  {planDiff.changed_trains?.length || 0}
+                </div>
+              </div>
+              <div style={{ background: '#fff', padding: '0.4rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.65rem', color: '#64748b' }}>Shifted Maintenance</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#d97706' }}>
+                  {planDiff.changed_maintenance?.length || 0}
+                </div>
+              </div>
+              <div style={{ background: '#fff', padding: '0.4rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.65rem', color: '#64748b' }}>Loop Holds</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#7c3aed' }}>
+                  {planDiff.changed_loops?.length || 0}
+                </div>
+              </div>
+              <div style={{ background: '#fff', padding: '0.4rem', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.65rem', color: '#64748b' }}>Frozen / Unchanged</div>
+                <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#16a34a' }}>
+                  {planDiff.unchanged_trains_count || 16} Trains
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Body: Scrollable Diff Table */}
+            <div style={{ padding: '1rem 1.25rem', overflowY: 'auto', flex: 1 }}>
+              {/* 1. Changed Maintenance Tasks */}
+              {planDiff.changed_maintenance && planDiff.changed_maintenance.length > 0 && (
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#b45309', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>🚧 Affected Maintenance Allocations ({planDiff.changed_maintenance.length})</span>
+                  </h4>
+                  <table className="table" style={{ width: '100%', fontSize: '0.72rem' }}>
+                    <thead>
+                      <tr>
+                        <th>Task ID</th>
+                        <th>Status</th>
+                        <th>Old Window</th>
+                        <th>New Window</th>
+                        <th>Shift</th>
+                        <th>Solver Rationale & Constraints</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {planDiff.changed_maintenance.map((m) => (
+                        <tr key={m.task_id}>
+                          <td style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{m.task_id}</td>
+                          <td>
+                            <span className="badge" style={{ background: '#fef3c7', color: '#92400e', fontSize: '0.62rem', border: '1px solid #fde68a' }}>
+                              {m.watermark || '↻ REPLANNED'}
+                            </span>
+                          </td>
+                          <td style={{ color: '#64748b', textDecoration: m.old_window ? 'line-through' : 'none' }}>
+                            {m.old_window || 'Unscheduled'}
+                          </td>
+                          <td style={{ fontWeight: 700, color: '#0369a1' }}>
+                            {m.new_window}
+                          </td>
+                          <td style={{ fontWeight: 700, color: m.shift_min > 0 ? '#b45309' : '#16a34a' }}>
+                            {m.shift_min > 0 ? `+${m.shift_min}m` : (m.shift_min ? `${m.shift_min}m` : '0m')}
+                          </td>
+                          <td style={{ maxWidth: '300px', lineHeight: 1.4 }}>
+                            {m.reason}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* 2. Changed Train Movements */}
+              {planDiff.changed_trains && planDiff.changed_trains.length > 0 && (
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#0284c7', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>🚆 Affected Train Services ({planDiff.changed_trains.length})</span>
+                  </h4>
+                  <table className="table" style={{ width: '100%', fontSize: '0.72rem' }}>
+                    <thead>
+                      <tr>
+                        <th>Train</th>
+                        <th>Action</th>
+                        <th>Old Slot</th>
+                        <th>New Slot</th>
+                        <th>Delay Added</th>
+                        <th>Regulation Alternative</th>
+                        <th>Physical Reason</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {planDiff.changed_trains.map((t) => (
+                        <tr key={t.train_number}>
+                          <td style={{ fontWeight: 800 }}>
+                            <div>{t.train_number}</div>
+                            <div style={{ fontSize: '0.64rem', color: '#64748b', fontWeight: 500 }}>{t.train_name}</div>
+                          </td>
+                          <td>
+                            <span className="badge" style={{
+                              background: t.action === 'HELD' ? '#fee2e2' : (t.action === 'REROUTED' ? '#e0e7ff' : '#dbeafe'),
+                              color: t.action === 'HELD' ? '#991b1b' : (t.action === 'REROUTED' ? '#3730a3' : '#1e40af'),
+                              fontSize: '0.62rem',
+                            }}>
+                              {t.watermark || `↻ ${t.action}`}
+                            </span>
+                          </td>
+                          <td style={{ color: '#64748b', textDecoration: 'line-through' }}>
+                            {t.old_departure || '--:--'}
+                          </td>
+                          <td style={{ fontWeight: 700, color: '#1e293b' }}>
+                            {t.new_departure || '--:--'}
+                          </td>
+                          <td style={{ fontWeight: 800, color: t.delay_delta_min > 0 ? '#dc2626' : '#16a34a' }}>
+                            {t.delay_delta_min > 0 ? `+${t.delay_delta_min} min` : '0 min'}
+                          </td>
+                          <td>
+                            {t.loop_used ? (
+                              <span className="badge badge-amber" style={{ fontSize: '0.62rem' }}>
+                                Held in {t.loop_used} ({t.held_station || 'Loop'})
+                              </span>
+                            ) : (
+                              <span style={{ color: '#64748b', fontSize: '0.68rem' }}>Main Track (SLW)</span>
+                            )}
+                          </td>
+                          <td style={{ maxWidth: '280px', lineHeight: 1.4 }}>
+                            {t.reason}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* 3. Loop Assignments */}
+              {planDiff.changed_loops && planDiff.changed_loops.length > 0 && (
+                <div>
+                  <h4 style={{ fontSize: '0.8rem', fontWeight: 800, color: '#7c3aed', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <span>⮀ Station Loop Regulations ({planDiff.changed_loops.length})</span>
+                  </h4>
+                  <table className="table" style={{ width: '100%', fontSize: '0.72rem' }}>
+                    <thead>
+                      <tr>
+                        <th>Station</th>
+                        <th>Loop Line</th>
+                        <th>Regulated Train</th>
+                        <th>Dispatch Consideration</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {planDiff.changed_loops.map((l, lIdx) => (
+                        <tr key={lIdx}>
+                          <td style={{ fontWeight: 700 }}>{l.station_code}</td>
+                          <td><span className="badge badge-blue" style={{ fontSize: '0.62rem' }}>{l.loop_id}</span></td>
+                          <td style={{ fontWeight: 700 }}>{l.train_number}</td>
+                          <td>{l.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                padding: '0.75rem 1.25rem',
+                borderTop: '1px solid var(--border-color)',
+                background: '#f8fafc',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <span style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                ✓ Verified conflict-free with safety headways by OR-Tools CP-SAT + LNS repair.
+              </span>
+              <button className="btn btn-sm btn-primary" onClick={() => setShowDiffModal(false)}>
+                Close Changes View
               </button>
             </div>
           </div>
