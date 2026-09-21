@@ -201,6 +201,7 @@ def main():
                 host,
                 "--port",
                 str(backend_port),
+                "--reload",
             ]
             backend_proc = subprocess.Popen(backend_cmd, cwd=PROJECT_ROOT)
             processes.append(backend_proc)
