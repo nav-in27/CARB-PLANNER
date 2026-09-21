@@ -1,0 +1,1061 @@
+@import "tailwindcss";
+
+/* ─── CARB-Planner Operational Railway Control System Design System ─── */
+/* Clean, Restrained, High-Density Enterprise Interface */
+
+:root {
+  --bg-app: #f1f5f9;
+  --bg-workspace: #f8fafc;
+  --bg-panel: #ffffff;
+  --bg-panel-hover: #f8fafc;
+  --bg-active: #eff6ff;
+  --bg-subtle: #f1f5f9;
+
+  --border-color: #cbd5e1;
+  --border-subtle: #e2e8f0;
+  --border-strong: #94a3b8;
+
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-dim: #94a3b8;
+
+  /* Operational Status Colors */
+  --op-green: #15803d;
+  --op-green-bg: #f0fdf4;
+  --op-green-border: #bbf7d0;
+
+  --op-amber: #b45309;
+  --op-amber-bg: #fffbeb;
+  --op-amber-border: #fde68a;
+
+  --op-red: #b91c1c;
+  --op-red-bg: #fef2f2;
+  --op-red-border: #fecaca;
+
+  --op-blue: #1d4ed8;
+  --op-blue-bg: #eff6ff;
+  --op-blue-border: #bfdbfe;
+
+  --op-slate: #475569;
+  --op-slate-bg: #f8fafc;
+  --op-slate-border: #e2e8f0;
+
+  /* Department Codings - Restrained & Authentic */
+  --dept-eng: #c2410c; /* Engineering / P.Way: Dark Terracotta */
+  --dept-eng-bg: #fff7ed;
+  --dept-eng-border: #ffedd5;
+
+  --dept-trd: #0369a1; /* Traction Distribution / OHE: Electric Cobalt */
+  --dept-trd-bg: #f0f9ff;
+  --dept-trd-border: #e0f2fe;
+
+  --dept-snt: #4338ca; /* Signal & Telecom: Deep Indigo */
+  --dept-snt-bg: #eef2ff;
+  --dept-snt-border: #e0e7ff;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", "Source Sans 3", "IBM Plex Sans", sans-serif;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Scrollbars (Visible & Clean) ─── */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #e2e8f0;
+}
+::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* ─── Desktop Application Layout ─── */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg-app);
+}
+
+/* ─── Left Sidebar (Clean & Narrow) ─── */
+.sidebar {
+  width: 220px;
+  background: #ffffff;
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 40;
+}
+
+.sidebar-brand {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: #ffffff;
+}
+
+.sidebar-brand h1 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sidebar-brand p {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.5rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: background-color 0.1s ease;
+  border: 1px solid transparent;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+
+.nav-item:hover {
+  background: var(--bg-panel-hover);
+  color: var(--text-primary);
+}
+
+.nav-item.active {
+  background: var(--op-blue-bg);
+  color: var(--op-blue);
+  border-color: var(--op-blue-border);
+  font-weight: 600;
+}
+
+.nav-item svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.sidebar-footer {
+  padding: 0.65rem 0.85rem;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-workspace);
+  font-size: 0.68rem;
+}
+
+.sim-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--op-amber);
+}
+
+.sim-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--op-amber);
+}
+
+/* ─── Main Content Workspace ─── */
+.main-content {
+  flex: 1;
+  margin-left: 220px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-width: 0;
+  max-width: calc(100vw - 220px);
+  background-color: var(--bg-app);
+}
+
+/* ─── Compact Operational Header ─── */
+.top-header {
+  height: 48px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-color);
+  padding: 0 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  font-size: 0.78rem;
+}
+
+.division-badge {
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.header-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text-muted);
+}
+
+.header-meta strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.76rem;
+}
+
+/* ─── Workspace Content Body ─── */
+.workspace-body {
+  padding: 1.25rem 1.5rem;
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.page-title-row {
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.page-title-row h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.page-title-row p {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+}
+
+/* ─── Compact Status Strip ─── */
+.status-strip {
+  display: flex;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+}
+
+.status-strip-item {
+  flex: 1;
+  padding: 0.5rem 0.85rem;
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+}
+
+.status-strip-item:last-child {
+  border-right: none;
+}
+
+.status-strip-label {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+.status-strip-val {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ─── Horizontal Operational KPI Strip ─── */
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.kpi-cell {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.65rem 0.85rem;
+  position: relative;
+}
+
+.kpi-cell-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.25rem;
+}
+
+.kpi-cell-val {
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.kpi-cell-meta {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* ─── Panels / Cards (Operational Style) ─── */
+.panel {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.65rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.panel-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* ─── Buttons (Control Room Style) ─── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border-color);
+  background: #ffffff;
+  color: var(--text-primary);
+  transition: all 0.1s ease;
+}
+
+.btn:hover {
+  background: var(--bg-panel-hover);
+  border-color: var(--border-strong);
+}
+
+.btn-primary {
+  background: var(--op-blue);
+  color: #ffffff;
+  border-color: var(--op-blue);
+}
+
+.btn-primary:hover {
+  background: #1e40af;
+  border-color: #1e40af;
+}
+
+.btn-danger {
+  background: var(--op-red);
+  color: #ffffff;
+  border-color: var(--op-red);
+}
+
+.btn-danger:hover {
+  background: #991b1b;
+  border-color: #991b1b;
+}
+
+.btn-success {
+  background: var(--op-green);
+  color: #ffffff;
+  border-color: var(--op-green);
+}
+
+.btn-success:hover {
+  background: #166534;
+  border-color: #166534;
+}
+
+.btn-sm {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+/* ─── Status Badges ─── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 3px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.badge-green { background: var(--op-green-bg); color: var(--op-green); border-color: var(--op-green-border); }
+.badge-amber { background: var(--op-amber-bg); color: var(--op-amber); border-color: var(--op-amber-border); }
+.badge-red { background: var(--op-red-bg); color: var(--op-red); border-color: var(--op-red-border); }
+.badge-blue { background: var(--op-blue-bg); color: var(--op-blue); border-color: var(--op-blue-border); }
+.badge-slate { background: var(--op-slate-bg); color: var(--op-slate); border-color: var(--op-slate-border); }
+
+/* Department Badges */
+.badge-dept-eng { background: var(--dept-eng-bg); color: var(--dept-eng); border-color: var(--dept-eng-border); }
+.badge-dept-trd { background: var(--dept-trd-bg); color: var(--dept-trd); border-color: var(--dept-trd-border); }
+.badge-dept-snt { background: var(--dept-snt-bg); color: var(--dept-snt); border-color: var(--dept-snt-border); }
+
+/* ─── Tables (Dense Operational Style) ─── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 0.5rem 0.65rem;
+  background: var(--bg-workspace);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.data-table td {
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table tr:hover td {
+  background: var(--bg-panel-hover);
+}
+
+.data-table tr.selected td {
+  background: var(--bg-active);
+}
+
+/* ─── Timeline / Gantt Visualization ─── */
+.timeline-container {
+  overflow-x: auto;
+  overflow-y: visible;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: #ffffff;
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.timeline-container::-webkit-scrollbar {
+  height: 11px;
+}
+
+.timeline-container::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-top: 1px solid var(--border-color);
+}
+
+.timeline-container::-webkit-scrollbar-thumb {
+  background: #0284c7;
+  border-radius: 6px;
+}
+
+.timeline-container::-webkit-scrollbar-thumb:hover {
+  background: #0369a1;
+}
+
+.timeline-header {
+  display: flex;
+  background: var(--bg-workspace);
+  border-bottom: 1px solid var(--border-color);
+  position: relative;
+  height: 32px;
+  min-width: 100%;
+}
+
+.timeline-header-label {
+  width: 235px;
+  min-width: 235px;
+  max-width: 235px;
+  flex-shrink: 0;
+  padding: 0 0.85rem;
+  display: flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  border-right: 2px solid var(--border-color);
+  background: var(--bg-workspace);
+  position: sticky;
+  left: 0;
+  z-index: 20;
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
+}
+
+.timeline-row {
+  display: flex;
+  align-items: stretch;
+  min-height: 50px;
+  height: 50px;
+  border-bottom: 1px solid var(--border-subtle);
+  position: relative;
+  min-width: 100%;
+}
+
+.timeline-row:nth-child(even) {
+  background: #fafafa;
+}
+
+.timeline-label {
+  width: 235px;
+  min-width: 235px;
+  max-width: 235px;
+  flex-shrink: 0;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.35rem 0.85rem;
+  border-right: 2px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  background: #ffffff;
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  box-shadow: 2px 0 6px rgba(0, 0, 0, 0.06);
+}
+
+.timeline-canvas {
+  flex: 1;
+  position: relative;
+  height: 100%;
+}
+
+.timeline-hour-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-subtle);
+  pointer-events: none;
+}
+
+.timeline-bar {
+  position: absolute;
+  top: 17px;
+  height: 26px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.45rem;
+  font-size: 0.67rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid rgba(0,0,0,0.15);
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.timeline-bar:hover {
+  filter: brightness(1.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  z-index: 15 !important;
+}
+
+.timeline-bar-eng {
+  background: #ea580c;
+  color: #ffffff;
+  border-color: #c2410c;
+}
+
+.timeline-bar-trd {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0369a1;
+}
+
+.timeline-bar-snt {
+  background: #4f46e5;
+  color: #ffffff;
+  border-color: #4338ca;
+}
+
+.timeline-bar-train {
+  background: #64748b;
+  color: #ffffff;
+  height: 6px;
+  top: 6px;
+  border-radius: 2px;
+  border: none;
+  cursor: default;
+}
+
+.timeline-bar-train-exp {
+  background: #dc2626;
+}
+
+.timeline-bar-train-pass {
+  background: #16a34a;
+}
+
+.timeline-bar-conflict {
+  border: 2px dashed #dc2626 !important;
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+
+/* ─── Right-side Drawer / Inspection Panel ─── */
+.drawer-panel {
+  width: 380px;
+  background: #ffffff;
+  border-left: 1px solid var(--border-color);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* ─── Contextual Railway Reference Image Frame ─── */
+.ref-image-card {
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.ref-image-card img {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  display: block;
+}
+
+.ref-image-caption {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  background: var(--bg-workspace);
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ─── Disruption Action Grid ─── */
+.disruption-action-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.disruption-action-card {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.disruption-action-card.critical { border-top: 3px solid var(--op-red); }
+.disruption-action-card.warning { border-top: 3px solid var(--op-amber); }
+.disruption-action-card.conflict { border-top: 3px solid var(--dept-snt); }
+
+/* ─── Split Screen Comparison (Before / After) ─── */
+.split-comparison {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.split-card {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.85rem;
+}
+
+.split-card-header {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: 0.5rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* ─── Decision Audit Panel ─── */
+.decision-audit-box {
+  background: var(--bg-workspace);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.85rem;
+}
+
+.audit-row {
+  margin-bottom: 0.65rem;
+}
+
+.audit-row:last-child {
+  margin-bottom: 0;
+}
+
+.audit-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.03em;
+}
+
+.audit-value {
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  margin-top: 0.15rem;
+}
+
+/* ─── Modal Overlay ─── */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-content {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  width: 90%;
+  max-width: 580px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 1.25rem;
+}
+
+/* ─── Real GIS Railway Map Planning Workspace ─── */
+.gis-layout {
+  display: flex;
+  height: calc(100vh - 120px);
+  min-height: 600px;
+  background: #f8fafc;
+  border-top: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.gis-map-hero {
+  flex: 1 1 75%;
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #e2e8f0;
+}
+
+.gis-map-container {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+}
+
+.gis-top-toolbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 50;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+
+.gis-toolbar-left,
+.gis-toolbar-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.gis-search-box {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 4px 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  font-size: 0.8rem;
+  width: 260px;
+}
+
+.gis-search-box input {
+  border: none;
+  outline: none;
+  width: 100%;
+  margin-left: 6px;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+}
+
+.gis-btn-group {
+  display: flex;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.gis-btn-group button {
+  border: none;
+  background: transparent;
+  padding: 5px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+}
+
+.gis-btn-group button.active {
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.gis-layer-tray {
+  position: absolute;
+  bottom: 24px;
+  left: 12px;
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 8px 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
+.gis-layer-tray label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.gis-data-mode-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  z-index: 50;
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-family: monospace;
+  letter-spacing: 0.04em;
+  display: flex;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.gis-context-panel {
+  flex: 0 0 340px;
+  width: 340px;
+  background: #ffffff;
+  border-left: 1px solid var(--border-color);
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.04);
+}
+
+.panel-section-header {
+  padding: 10px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.panel-content {
+  padding: 14px;
+  flex: 1;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.status-pill.available {
+  background: var(--op-green-bg);
+  color: var(--op-green);
+  border: 1px solid var(--op-green-border);
+}
+
+.status-pill.blocked {
+  background: var(--op-red-bg);
+  color: var(--op-red);
+  border: 1px solid var(--op-red-border);
+}
+
+.status-pill.restricted {
+  background: var(--op-amber-bg);
+  color: var(--op-amber);
+  border: 1px solid var(--op-amber-border);
+}
+
+.status-pill.selected {
+  background: var(--op-blue-bg);
+  color: var(--op-blue);
+  border: 1px solid var(--op-blue-border);
+}
+
+.station-badge-circle {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+.station-badge-circle.junction {
+  background: #b91c1c;
+}
+
