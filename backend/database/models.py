@@ -175,7 +175,7 @@ class TrainServiceModel(Base):
     train_number = Column(String(32), primary_key=True)
     train_name = Column(String(128), nullable=False)
     train_type = Column(String(64), nullable=False)
-    priority = Column(Integer, default=1)
+    priority = Column(String(32), default="P1")
     origin = Column(String(64), nullable=False)
     destination = Column(String(64), nullable=False)
     departure_time = Column(String(16))

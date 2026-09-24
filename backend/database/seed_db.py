@@ -266,7 +266,7 @@ def seed_database(session: Session) -> dict:
                     train_number=svc.train_number,
                     train_name=svc.train_name,
                     train_type=cat_str,
-                    priority=svc.priority_class if hasattr(svc, "priority_class") else 1,
+                    priority=str(svc.priority_class.value if hasattr(svc.priority_class, "value") else (svc.priority_class or "P1")),
                     origin=svc.source_station,
                     destination=svc.destination_station,
                     departure_time=dep_time,
