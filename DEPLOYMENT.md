@@ -56,6 +56,18 @@ The system runs as an end-to-end cloud deployment across three specialized tiers
 
 ---
 
+## Live Production Endpoints
+
+| Component | Platform | Live URL / Connection | Status |
+| :--- | :--- | :--- | :--- |
+| **Frontend Web App** | **Vercel** | [https://carb-ivory.vercel.app](https://carb-ivory.vercel.app) | **Online / Verified** |
+| **Backend API Server** | **Render** | [https://carb-planner-api.onrender.com](https://carb-planner-api.onrender.com) | **Online / Verified** |
+| **API Health Check** | **Render** | [https://carb-planner-api.onrender.com/health](https://carb-planner-api.onrender.com/health) | **Healthy (`200 OK`)** |
+| **Interactive API Docs** | **Render** | [https://carb-planner-api.onrender.com/docs](https://carb-planner-api.onrender.com/docs) | **Online / Swagger UI** |
+| **PostgreSQL Database** | **Supabase** | `aws-0-us-east-1.pooler.supabase.com:6543` | **Connected (PostGIS Active)** |
+
+---
+
 ## 2. Environment Variables Specification
 
 ### A. Render (Backend)
