@@ -15,6 +15,7 @@ from __future__ import annotations
 import copy
 from datetime import datetime
 import logging
+import os
 import sys
 import time
 import uuid
@@ -54,6 +55,8 @@ from backend.models.scenario import CorridorConfig, PlanningScenario, ConflictIt
 from backend.data.corridor_catalog import get_primary_corridor, get_corridor_by_id, CORRIDOR_REGISTRY
 from backend.data.timetable import build_corridor_timetable
 from backend.database.scenario_repo import scenario_repo
+from backend.database.db import check_db_health, get_database_url
+from backend.database.init_db import init_database
 from backend.optimizer.cp_sat import solve_block_plan
 from backend.optimizer.greedy_baseline import solve_greedy
 from backend.optimizer.initial_solution import generate_initial_solution
@@ -91,13 +94,31 @@ app = FastAPI(
     version="1.0.0-mvp",
 )
 
+# ─── Production CORS Configuration ───
+cors_origins_env = os.getenv("CORS_ORIGINS", "")
+if cors_origins_env.strip():
+    allowed_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+else:
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+
+is_wildcard = "*" in allowed_origins
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"] if is_wildcard else allowed_origins,
+    allow_origin_regex=None if is_wildcard else r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 # ─── Application State ───
 SECTION_METADATA = {
@@ -606,8 +627,19 @@ def _ensure_loaded():
 async def startup_event():
     logger.info("Initializing CARB-Planner backend state with Tamil Nadu corridor infrastructure...")
     _ensure_loaded()
-    logger.info(f"Timetable loaded: {state.timetable.total_services} services "
-                f"({state.timetable.real_services} public, {state.timetable.simulated_services} simulated)")
+    
+    # Initialize Supabase PostgreSQL schema and seed if DATABASE_URL is present
+    if get_database_url():
+        try:
+            logger.info("DATABASE_URL detected. Initializing Supabase PostgreSQL schema & seeding...")
+            init_database()
+        except Exception as e:
+            logger.warning(f"Database initialization warning: {e}")
+
+    if state.timetable:
+        logger.info(f"Timetable loaded: {state.timetable.total_services} services "
+                    f"({state.timetable.real_services} public, {state.timetable.simulated_services} simulated)")
+
 
 
 # ─── ENDPOINTS ───
@@ -1999,8 +2031,10 @@ async def get_system_health():
             "category": "DATABASE",
             "status": "HEALTHY",
             "latency_ms": 0.8,
-            "version": "IN_MEMORY_TRANSACTIONAL",
-            "details": f"Version {scenario_repo.get_current_version_number()}, {len(scenario_repo.get_audit_log())} audit log records",
+            "version": "SUPABASE_POSTGRESQL" if check_db_health().get("connected") else "IN_MEMORY_TRANSACTIONAL",
+            "details": f"Version {scenario_repo.get_current_version_number()}, {len(scenario_repo.get_audit_log())} audit log records" + (
+                " (Synced with Supabase PostgreSQL)" if check_db_health().get("connected") else ""
+            ),
         },
     ]
 
@@ -2583,7 +2617,25 @@ async def get_train_density():
     }
 
 
-# ─── Health check ───
+# ─── Production Health Check ───
 @app.get("/health")
 async def health():
-    return {"status": "ok", "service": "carb-planner"}
+    db_status = check_db_health()
+    is_connected = db_status.get("connected", False)
+    db_configured = db_status.get("status") != "unconfigured"
+
+    # Status is ok if DB is connected or if running in local standalone development mode
+    status = "ok" if (is_connected or not db_configured) else "degraded"
+    database_state = "connected" if is_connected else ("unconfigured" if not db_configured else "disconnected")
+
+    return {
+        "status": status,
+        "environment": os.getenv("ENVIRONMENT", "production"),
+        "database": database_state,
+        "database_details": {
+            "postgis": db_status.get("postgis", False),
+            "status": db_status.get("status", "unknown"),
+        },
+        "version": app.version,
+    }
+

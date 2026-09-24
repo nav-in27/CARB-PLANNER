@@ -1,0 +1,35 @@
+# ==============================================================================
+# CARB-PLANNER — RENDER INFRASTRUCTURE AS CODE DEPLOYMENT SPECIFICATION
+# ==============================================================================
+# Deploy directly by linking repository to Render (Blueprint Deployment)
+# FastAPI Backend with CP-SAT, LNS, Disruption Control & Supabase PostgreSQL
+
+services:
+  - type: web
+    name: carb-planner-backend
+    runtime: python
+    region: frankfurt # Or oregon, ohio, singapore
+    plan: starter
+    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
+    startCommand: "gunicorn backend.main:app -w 2 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --timeout 120"
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: PORT
+        value: 10000
+      - key: PYTHON_VERSION
+        value: 3.11.8
+      - key: CORS_ORIGINS
+        sync: false # Set to your Vercel frontend domain e.g. https://carb-planner.vercel.app
+      - key: DATABASE_URL
+        sync: false # Set to your Supabase PostgreSQL connection string
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DB_POOL_SIZE
+        value: "5"
+      - key: DB_MAX_OVERFLOW
+        value: "10"
+      - key: DB_POOL_RECYCLE
+        value: "1800"

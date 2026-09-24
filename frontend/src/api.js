@@ -3,7 +3,15 @@
  * Interfaces with FastAPI backend at /api
  */
 
-const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+function resolveApiBase() {
+  const envUrl = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE || '').trim();
+  if (!envUrl) return '/api';
+  const clean = envUrl.replace(/\/+$/, '');
+  return clean.endsWith('/api') ? clean : `${clean}/api`;
+}
+
+export const API_BASE = resolveApiBase();
+
 
 export async function fetchStatus() {
   const res = await fetch(`${API_BASE}/status`);
