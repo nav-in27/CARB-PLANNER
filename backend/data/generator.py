@@ -1047,49 +1047,51 @@ def generate_maintenance_tasks(
     tasks: List[MaintenanceTask] = []
 
     # Carefully designed task set for demo conflicts.
-    # Design principles:
-    # - Non-deferrable tasks go on double-track sections (S01, S02, S04) or have wide windows
-    # - Overlapping tasks on same section create optimizer conflicts
-    # - T03/T05 department conflict on S05 (Engineering vs S&T)
-    # - T04/T08 same-section conflict on S04 (Engineering vs Electrical)
+    # Carefully designed 13-task set across 4 weeks with deterministic test scenario:
+    # - Week 3 has 5 tasks, Wednesday has 3 tasks (ENG-014, TRD-009, SNT-021)
+    # - Multi-department joint possession on S01 (ENG-014 + TRD-009)
+    # - Non-deferrable tasks go on double-track or wide windows
+    # - Backward-compatible aliases for T01..T13
     task_defs = [
-        # (id, dept, type, section_id, priority, criticality, earliest, deadline, deferrable)
-        # Engineering tasks
-        ("T01", Department.ENGINEERING, TaskType.TRACK_INSPECTION,  "S01", TaskPriority.MEDIUM, TaskPriority.MEDIUM, 0, 64, True),
-        ("T02", Department.ENGINEERING, TaskType.RAIL_GRINDING,     "S02", TaskPriority.HIGH,   TaskPriority.HIGH,   0, 80, False),  # double-track S02
-        ("T03", Department.ENGINEERING, TaskType.TRACK_MAINTENANCE, "S05", TaskPriority.MEDIUM, TaskPriority.MEDIUM, 16, 80, True),
-        ("T04", Department.ENGINEERING, TaskType.TRACK_MAINTENANCE, "S04", TaskPriority.LOW,    TaskPriority.LOW,    24, 96, True),
+        # (id, alias, dept, type, section_id, prio, crit, earliest, deadline, deferrable, pref_week, plan_day, plan_win, resources, poss_type)
+        # ── Week 1 (1–6 Sep) — 3 tasks ──
+        ("ENG-040", "T11", Department.ENGINEERING, TaskType.TRACK_INSPECTION,  "S01", TaskPriority.MEDIUM, TaskPriority.MEDIUM, 4, 32, True, 1, "Tuesday", "01:00–04:00", ["ENG_CREW_01", "CSM_09_TAMP"], "TOTAL_SHUTDOWN"),
+        ("TRD-042", "T10", Department.ELECTRICAL,  TaskType.OHE_MAINTENANCE,   "S02", TaskPriority.HIGH,   TaskPriority.HIGH,   2, 30, True, 1, "Wednesday", "00:30–03:00", ["TRD_CREW_01", "TWR_WAGON_01"], "POWER_OHE_ISOLATION"),
+        ("T08",     "TRD-008", Department.ELECTRICAL, TaskType.OHE_MAINTENANCE,"S04", TaskPriority.CRITICAL, TaskPriority.CRITICAL, 0, 48, False, 1, "Friday", "08:00–12:00", ["TRD_CREW_02", "TWR_WAGON_02"], "POWER_OHE_ISOLATION"),
 
-        # S&T tasks — T05 conflicts with T03 on S05 (department conflict)
-        ("T05", Department.SNT, TaskType.SIGNAL_MAINTENANCE, "S05", TaskPriority.HIGH,     TaskPriority.HIGH,   8, 56, False),
-        ("T06", Department.SNT, TaskType.SIGNAL_MAINTENANCE, "S02", TaskPriority.MEDIUM,   TaskPriority.MEDIUM, 32, 96, True),
-        ("T07", Department.SNT, TaskType.SIGNAL_MAINTENANCE, "S06", TaskPriority.LOW,      TaskPriority.LOW,    32, 96, True),
+        # ── Week 2 (7–13 Sep) — 3 tasks ──
+        ("T04",     "ENG-004", Department.ENGINEERING, TaskType.TRACK_MAINTENANCE, "S04", TaskPriority.LOW,  TaskPriority.LOW,    24, 96, True, 2, "Monday", "10:00–12:30", ["ENG_CREW_02"], "TOTAL_SHUTDOWN"),
+        ("SNT-045", "T06", Department.SNT,         TaskType.SIGNAL_MAINTENANCE,"S02", TaskPriority.MEDIUM, TaskPriority.MEDIUM, 40, 72, True, 2, "Tuesday", "10:00–13:00", ["SNT_CREW_01"], "CAUTION_ORDER"),
+        ("ENG-022", "T03", Department.ENGINEERING, TaskType.TRACK_MAINTENANCE, "S03", TaskPriority.HIGH,   TaskPriority.HIGH,   48, 80, True, 2, "Wednesday", "12:00–15:00", ["ENG_CREW_01", "RG_4_MACHINE"], "TOTAL_SHUTDOWN"),
 
-        # Electrical tasks — T08 critical on S04, conflicts with T04
-        ("T08", Department.ELECTRICAL, TaskType.OHE_MAINTENANCE, "S04", TaskPriority.CRITICAL, TaskPriority.CRITICAL, 0, 48, False),
-        ("T09", Department.ELECTRICAL, TaskType.OHE_INSPECTION,  "S01", TaskPriority.MEDIUM,   TaskPriority.MEDIUM,   24, 80, True),
-        ("T10", Department.ELECTRICAL, TaskType.CABLE_MAINTENANCE,"S02", TaskPriority.HIGH,    TaskPriority.HIGH,     16, 72, True),
+        # ── Week 3 (14–20 Sep) — 5 tasks, Wednesday has 3 tasks ──
+        # ENG-014 on S01 (MS-CGL): 08:45–10:30 detailed daily slot, bundling candidate with TRD-009
+        ("ENG-014", "T01", Department.ENGINEERING, TaskType.TRACK_MAINTENANCE, "S01", TaskPriority.HIGH,   TaskPriority.CRITICAL, 32, 56, False, 3, "Wednesday", "08:00–12:00", ["ENG_CREW_01", "CSM_09_TAMP"], "TOTAL_SHUTDOWN"),
+        # TRD-009 on S01 (MS-CGL): compatible OHE work on S01, bundles into joint possession
+        ("TRD-009", "T09", Department.ELECTRICAL,  TaskType.OHE_INSPECTION,    "S01", TaskPriority.MEDIUM, TaskPriority.HIGH,     32, 56, True,  3, "Wednesday", "08:00–12:00", ["TRD_CREW_01", "TWR_WAGON_01"], "POWER_OHE_ISOLATION"),
+        # SNT-021 on S05 (ALU-TPJ): 3rd task on Wednesday
+        ("SNT-021", "T05", Department.SNT,         TaskType.SIGNAL_MAINTENANCE,"S05", TaskPriority.HIGH,   TaskPriority.HIGH,     36, 60, False, 3, "Wednesday", "09:00–11:30", ["SNT_CREW_01"], "CAUTION_ORDER"),
+        # ENG-018 on S02 (CGL-VM): Thursday task (alias T02)
+        ("ENG-018", "T02", Department.ENGINEERING, TaskType.RAIL_GRINDING,     "S02", TaskPriority.HIGH,   TaskPriority.HIGH,     48, 80, False, 3, "Thursday", "12:00–15:00", ["ENG_CREW_01", "RG_4_MACHINE"], "TOTAL_SHUTDOWN"),
+        # SNT-006 on S06 (VM-PDY): Friday task
+        ("SNT-006", "T07", Department.SNT,         TaskType.SIGNAL_MAINTENANCE,"S06", TaskPriority.LOW,    TaskPriority.LOW,      40, 72, True,  3, "Friday", "10:00–12:30", ["SNT_CREW_02"], "CAUTION_ORDER"),
 
-        # Extra overlapping tasks
-        ("T11", Department.ENGINEERING, TaskType.TRACK_INSPECTION, "S03", TaskPriority.MEDIUM, TaskPriority.MEDIUM, 28, 80, True),
-        ("T12", Department.ELECTRICAL,  TaskType.OHE_INSPECTION,   "S05", TaskPriority.MEDIUM, TaskPriority.LOW,    24, 72, True),
-        ("T13", Department.ENGINEERING, TaskType.TRACK_MAINTENANCE,"S06", TaskPriority.LOW,    TaskPriority.LOW,    48, 96, True),
+        # ── Week 4 (21–27 Sep) — 2 tasks ──
+        ("ENG-048", "T12", Department.ENGINEERING, TaskType.TRACK_MAINTENANCE, "S05", TaskPriority.MEDIUM, TaskPriority.MEDIUM, 36, 72, True, 4, "Monday", "09:00–12:00", ["ENG_CREW_02"], "TOTAL_SHUTDOWN"),
+        ("TRD-062", "T13", Department.ELECTRICAL,  TaskType.OHE_INSPECTION,    "S05", TaskPriority.MEDIUM, TaskPriority.LOW,      32, 60, True, 4, "Tuesday", "08:00–10:30", ["TRD_CREW_01"], "POWER_OHE_ISOLATION"),
     ]
 
-    for tid, dept, ttype, sec_id, prio, crit, earliest, deadline, deferrable in task_defs:
+    for tid, alias, dept, ttype, sec_id, prio, crit, earliest, deadline, deferrable, pref_w, plan_d, plan_win, req_res, req_poss in task_defs:
         sec = next((s for s in network.sections if s.section_id == sec_id), primary_sections[0])
 
         base_dur = BASE_DURATIONS[ttype]
-        # Adjust duration by condition and weather
         condition = sec.condition_score
         weather = round(rng.uniform(0.8, 1.3), 2)
         complexity = round(rng.uniform(0.3, 0.9), 2)
         crew = rng.choice([3, 4, 5, 6, 8])
 
-        # Historical duration with some noise
         hist_dur = int(base_dur * (1.0 + (1.0 - condition) * 0.3) * weather)
         hist_dur = max(30, hist_dur)
-        # Round to nearest 15 min
         hist_dur = ((hist_dur + 14) // 15) * 15
 
         risk = sec.risk_score
@@ -1106,8 +1108,14 @@ def generate_maintenance_tasks(
         elif risk >= 0.35:
             risk_level = RiskLevel.MEDIUM
 
+        p50 = int(hist_dur * 0.85 // 15 * 15)
+        p90 = int(hist_dur * 1.15 // 15 * 15)
+        p50 = max(15, p50)
+        p90 = max(p50, p90)
+
         tasks.append(MaintenanceTask(
             task_id=tid,
+            alias=alias,
             department=dept,
             task_type=ttype,
             section_id=sec_id,
@@ -1120,6 +1128,8 @@ def generate_maintenance_tasks(
             complexity=complexity,
             weather_factor=weather,
             historical_duration_min=hist_dur,
+            predicted_p50_min=p50,
+            predicted_p90_min=p90,
             earliest_start_slot=earliest,
             deadline_slot=deadline,
             risk_score=round(risk, 3),
@@ -1128,9 +1138,44 @@ def generate_maintenance_tasks(
             is_deferrable=deferrable,
             defect_count=sec.defect_count,
             days_since_maintenance=sec.days_since_maintenance,
+            preferred_week=pref_w,
+            planned_day=plan_d,
+            planned_window=plan_win,
+            monthly_plan_id=f"M-2026-09-v1",
+            weekly_plan_id=f"W-2026-09-W{pref_w}-v1",
+            daily_plan_id=f"D-2026-09-18-v1" if pref_w == 3 and plan_d in ["Wednesday", "Friday"] else None,
+            required_resources=req_res,
+            required_possession_type=req_poss,
+            affected_track_id=f"TRK_{sec_id}_UP" if sec.capacity >= 2 else f"TRK_{sec_id}_SINGLE",
+            expected_train_impact=3 if prio in [TaskPriority.CRITICAL, TaskPriority.HIGH] else 1,
+            due_date=f"2026-09-{(pref_w * 7):02d}",
+            maintenance_deadline=f"2026-09-{(pref_w * 7 + 2):02d}",
+            why_this_week=[
+                f"{crit.value} criticality on {sec_info_name(sec_id)}",
+                f"Maintenance due before deadline 2026-09-{(pref_w * 7 + 2):02d}",
+                f"{dept.value} crew and machines available in Week {pref_w}",
+            ],
+            why_this_day=[
+                f"Timetable slot with reduced passenger train density on {plan_d}",
+                f"Assigned exclusive resource {req_res[0]} available",
+                f"Compatible safety clearance on {sec_id}",
+            ],
         ))
 
     return tasks
+
+
+def sec_info_name(section_id: str) -> str:
+    names = {
+        "S01": "Chennai Egmore – Chengalpattu",
+        "S02": "Chengalpattu – Villupuram",
+        "S03": "Villupuram – Vriddhachalam",
+        "S04": "Vriddhachalam – Ariyalur",
+        "S05": "Ariyalur – Tiruchirappalli",
+        "S06": "Villupuram – Puducherry",
+    }
+    return names.get(section_id, f"Section {section_id}")
+
 
 
 def generate_training_data(seed: int = SEED, n_samples: int = 500) -> list[dict]:

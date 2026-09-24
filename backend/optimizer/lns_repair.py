@@ -131,11 +131,11 @@ def apply_disruption(
     trains: List[Train],
     network: RailwayNetwork,
     services: Optional[List[TrainService]] = None,
-) -> Tuple[SchedulePlan, Dict[str, Any], Dict[str, Any]]:
+) -> Tuple[SchedulePlan, Dict[str, Any]]:
     """Execute localized LNS / CP-SAT replanning onto current_plan.
 
     Returns:
-        (repaired_plan, repair_info, plan_diff)
+        (repaired_plan, repair_info)
     """
     start_time = time.perf_counter()
     logger.info(f"LNS Localized Replanning starting for disruption: {disruption.disruption_type} on {disruption.affected_section}")

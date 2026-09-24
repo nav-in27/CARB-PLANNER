@@ -1,0 +1,11 @@
+{
+  "include": [
+    "backend",
+    "tests"
+  ],
+  "extraPaths": [
+    ".",
+    "C:/Users/navee/AppData/Local/Programs/Python/Python311/Lib/site-packages"
+  ],
+  "pythonPath": "C:/Users/navee/AppData/Local/Programs/Python/Python311/python.exe"
+}

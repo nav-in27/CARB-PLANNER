@@ -390,3 +390,100 @@ export async function fetchSystemHealth() {
   return res.json();
 }
 
+// ── Multi-Horizon Planning APIs ───────────────────────────────────────────────
+
+export async function fetchHorizonOverview() {
+  const res = await fetch(`${API_BASE}/horizons/overview`);
+  if (!res.ok) throw new Error(`Failed to fetch horizon overview: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchMonthlyPlan() {
+  const res = await fetch(`${API_BASE}/horizons/monthly`);
+  if (!res.ok) throw new Error(`Failed to fetch monthly plan: ${res.statusText}`);
+  return res.json();
+}
+
+export async function optimizeMonthlyPlan() {
+  const res = await fetch(`${API_BASE}/horizons/monthly/optimize`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to optimize monthly plan: ${res.statusText}`);
+  return res.json();
+}
+
+export async function runMonthlyLns(iterations = 10) {
+  const res = await fetch(`${API_BASE}/horizons/monthly/lns?iterations=${iterations}`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to run monthly LNS: ${res.statusText}`);
+  return res.json();
+}
+
+export async function approveMonthlyPlan(mode = 'APPROVED', notes = '') {
+  const res = await fetch(`${API_BASE}/horizons/monthly/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode, notes }),
+  });
+  if (!res.ok) throw new Error(`Failed to approve monthly plan: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchMonthlyImpact(taskId, newWeek = null, newDay = null) {
+  const res = await fetch(`${API_BASE}/horizons/monthly/impact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskId, new_week: newWeek, new_day: newDay }),
+  });
+  if (!res.ok) throw new Error(`Failed to check monthly impact: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchWeeklyPlan(weekNum = 3) {
+  const res = await fetch(`${API_BASE}/horizons/weekly?week_num=${weekNum}`);
+  if (!res.ok) throw new Error(`Failed to fetch weekly plan: ${res.statusText}`);
+  return res.json();
+}
+
+export async function optimizeWeeklyPlan(weekNum = 3) {
+  const res = await fetch(`${API_BASE}/horizons/weekly/optimize?week_num=${weekNum}`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to optimize weekly plan: ${res.statusText}`);
+  return res.json();
+}
+
+export async function runWeeklyLns(weekNum = 3, iterations = 10) {
+  const res = await fetch(`${API_BASE}/horizons/weekly/lns?week_num=${weekNum}&iterations=${iterations}`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to run weekly LNS: ${res.statusText}`);
+  return res.json();
+}
+
+export async function approveWeeklyPlan(weekNum = 3, mode = 'APPROVED', notes = '') {
+  const res = await fetch(`${API_BASE}/horizons/weekly/approve?week_num=${weekNum}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mode, notes }),
+  });
+  if (!res.ok) throw new Error(`Failed to approve weekly plan: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchWeeklyImpact(taskId, newDay = null) {
+  const res = await fetch(`${API_BASE}/horizons/weekly/impact`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskId, new_day: newDay }),
+  });
+  if (!res.ok) throw new Error(`Failed to check weekly impact: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchTaskTraceability(taskId) {
+  const res = await fetch(`${API_BASE}/horizons/traceability/${taskId}`);
+  if (!res.ok) throw new Error(`Failed to fetch traceability for ${taskId}: ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchHorizonReport(horizon = 'monthly') {
+  const res = await fetch(`${API_BASE}/horizons/reports/${horizon}`);
+  if (!res.ok) throw new Error(`Failed to fetch report for ${horizon}: ${res.statusText}`);
+  return res.json();
+}
+
+

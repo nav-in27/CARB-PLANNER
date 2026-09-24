@@ -13,6 +13,19 @@ import {
   fetchDebugTrainAssignments,
   fetchDebugMaintenanceAssignments,
   fetchSystemHealth,
+  fetchHorizonOverview,
+  fetchMonthlyPlan,
+  optimizeMonthlyPlan as apiOptimizeMonthly,
+  runMonthlyLns as apiRunMonthlyLns,
+  approveMonthlyPlan as apiApproveMonthly,
+  fetchMonthlyImpact,
+  fetchWeeklyPlan,
+  optimizeWeeklyPlan as apiOptimizeWeekly,
+  runWeeklyLns as apiRunWeeklyLns,
+  approveWeeklyPlan as apiApproveWeekly,
+  fetchWeeklyImpact,
+  fetchTaskTraceability,
+  fetchHorizonReport,
 } from '../api';
 
 const ScenarioContext = createContext(null);
@@ -23,6 +36,21 @@ export function ScenarioProvider({ children }) {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [error, setError] = useState(null);
   const [selectedEntity, setSelectedEntity] = useState(null);
+
+  // Multi-Horizon Planning States
+  const [activeHorizon, setActiveHorizon] = useState('daily'); // 'monthly' | 'weekly' | 'daily'
+  const [selectedWeekNum, setSelectedWeekNum] = useState(3);
+  const [horizonOverview, setHorizonOverview] = useState(null);
+  const [monthlyPlan, setMonthlyPlan] = useState(null);
+  const [weeklyPlan, setWeeklyPlan] = useState(null);
+  const [traceTaskData, setTraceTaskData] = useState(null);
+  const [traceModalOpen, setTraceModalOpen] = useState(false);
+  const [impactReport, setImpactReport] = useState(null);
+  const [impactModalOpen, setImpactModalOpen] = useState(false);
+  const [reportsModalOpen, setReportsModalOpen] = useState(false);
+  const [activeReportHorizon, setActiveReportHorizon] = useState('monthly');
+  const [activeReportData, setActiveReportData] = useState(null);
+  const [isHorizonLoading, setIsHorizonLoading] = useState(false);
 
   const [versions, setVersions] = useState([]);
   const [auditLog, setAuditLog] = useState([]);
@@ -85,13 +113,180 @@ export function ScenarioProvider({ children }) {
     }
   }, []);
 
+  const refreshHorizonOverview = useCallback(async () => {
+    try {
+      const data = await fetchHorizonOverview();
+      setHorizonOverview(data);
+    } catch (err) {
+      console.warn('Could not fetch horizon overview:', err);
+    }
+  }, []);
+
+  const refreshMonthlyPlan = useCallback(async () => {
+    try {
+      setIsHorizonLoading(true);
+      const data = await fetchMonthlyPlan();
+      setMonthlyPlan(data);
+    } catch (err) {
+      console.warn('Could not fetch monthly plan:', err);
+    } finally {
+      setIsHorizonLoading(false);
+    }
+  }, []);
+
+  const refreshWeeklyPlan = useCallback(async (weekNum = 3) => {
+    try {
+      setIsHorizonLoading(true);
+      const data = await fetchWeeklyPlan(weekNum);
+      setWeeklyPlan(data);
+    } catch (err) {
+      console.warn(`Could not fetch weekly plan for week ${weekNum}:`, err);
+    } finally {
+      setIsHorizonLoading(false);
+    }
+  }, []);
+
+  const optimizeMonthlyAction = useCallback(async () => {
+    try {
+      setIsHorizonLoading(true);
+      const data = await apiOptimizeMonthly();
+      setMonthlyPlan(data);
+      await refreshHorizonOverview();
+      return data;
+    } catch (err) {
+      console.error('Failed to optimize monthly plan:', err);
+      throw err;
+    } finally {
+      setIsHorizonLoading(false);
+    }
+  }, [refreshHorizonOverview]);
+
+  const runMonthlyLnsAction = useCallback(async (iterations = 10) => {
+    try {
+      setIsHorizonLoading(true);
+      const data = await apiRunMonthlyLns(iterations);
+      if (data.plan) setMonthlyPlan(data.plan);
+      await refreshHorizonOverview();
+      return data;
+    } catch (err) {
+      console.error('Failed to run monthly LNS:', err);
+      throw err;
+    } finally {
+      setIsHorizonLoading(false);
+    }
+  }, [refreshHorizonOverview]);
+
+  const approveMonthlyAction = useCallback(async (mode = 'APPROVED', notes = '') => {
+    try {
+      const data = await apiApproveMonthly(mode, notes);
+      setMonthlyPlan(data);
+      await refreshHorizonOverview();
+      return data;
+    } catch (err) {
+      console.error('Failed to approve monthly plan:', err);
+      throw err;
+    }
+  }, [refreshHorizonOverview]);
+
+  const optimizeWeeklyAction = useCallback(async (weekNum = 3) => {
+    try {
+      setIsHorizonLoading(true);
+      const data = await apiOptimizeWeekly(weekNum);
+      setWeeklyPlan(data);
+      await refreshHorizonOverview();
+      return data;
+    } catch (err) {
+      console.error('Failed to optimize weekly plan:', err);
+      throw err;
+    } finally {
+      setIsHorizonLoading(false);
+    }
+  }, [refreshHorizonOverview]);
+
+  const runWeeklyLnsAction = useCallback(async (weekNum = 3, iterations = 10) => {
+    try {
+      setIsHorizonLoading(true);
+      const data = await apiRunWeeklyLns(weekNum, iterations);
+      await refreshWeeklyPlan(weekNum);
+      await refreshHorizonOverview();
+      return data;
+    } catch (err) {
+      console.error('Failed to run weekly LNS:', err);
+      throw err;
+    } finally {
+      setIsHorizonLoading(false);
+    }
+  }, [refreshWeeklyPlan, refreshHorizonOverview]);
+
+  const approveWeeklyAction = useCallback(async (weekNum = 3, mode = 'APPROVED', notes = '') => {
+    try {
+      const data = await apiApproveWeekly(weekNum, mode, notes);
+      setWeeklyPlan(data);
+      await refreshHorizonOverview();
+      return data;
+    } catch (err) {
+      console.error('Failed to approve weekly plan:', err);
+      throw err;
+    }
+  }, [refreshHorizonOverview]);
+
+  const openTraceModal = useCallback(async (taskId) => {
+    try {
+      const data = await fetchTaskTraceability(taskId);
+      setTraceTaskData(data);
+      setTraceModalOpen(true);
+    } catch (err) {
+      console.error('Failed to fetch traceability for task:', err);
+    }
+  }, []);
+
+  const closeTraceModal = useCallback(() => {
+    setTraceModalOpen(false);
+    setTraceTaskData(null);
+  }, []);
+
+  const checkDownstreamImpact = useCallback(async (taskId, newWeek = null, newDay = null) => {
+    try {
+      const data = await fetchMonthlyImpact(taskId, newWeek, newDay);
+      setImpactReport(data);
+      setImpactModalOpen(true);
+      return data;
+    } catch (err) {
+      console.error('Failed to check downstream impact:', err);
+    }
+  }, []);
+
+  const closeImpactModal = useCallback(() => {
+    setImpactModalOpen(false);
+    setImpactReport(null);
+  }, []);
+
+  const openReportsModal = useCallback(async (horizon = 'monthly') => {
+    try {
+      setActiveReportHorizon(horizon);
+      const data = await fetchHorizonReport(horizon);
+      setActiveReportData(data);
+      setReportsModalOpen(true);
+    } catch (err) {
+      console.error('Failed to fetch horizon report:', err);
+    }
+  }, []);
+
+  const closeReportsModal = useCallback(() => {
+    setReportsModalOpen(false);
+    setActiveReportData(null);
+  }, []);
+
   useEffect(() => {
     refreshScenario();
     refreshVersions();
     refreshAuditLog();
     refreshHealth();
     refreshDebugData();
-  }, [refreshScenario, refreshVersions, refreshAuditLog, refreshHealth, refreshDebugData]);
+    refreshHorizonOverview();
+    refreshMonthlyPlan();
+    refreshWeeklyPlan(selectedWeekNum);
+  }, [refreshScenario, refreshVersions, refreshAuditLog, refreshHealth, refreshDebugData, refreshHorizonOverview, refreshMonthlyPlan, refreshWeeklyPlan, selectedWeekNum]);
 
   // Select entity across components (Map <-> Planner <-> Queue <-> Timetable)
   const selectEntity = useCallback((type, id, data) => {
@@ -286,6 +481,37 @@ export function ScenarioProvider({ children }) {
     isLoading,
     isOptimizing,
     error,
+    // Multi-Horizon Planning Exports
+    activeHorizon,
+    setActiveHorizon,
+    selectedWeekNum,
+    setSelectedWeekNum,
+    horizonOverview,
+    monthlyPlan,
+    weeklyPlan,
+    traceTaskData,
+    traceModalOpen,
+    impactReport,
+    impactModalOpen,
+    reportsModalOpen,
+    activeReportHorizon,
+    activeReportData,
+    isHorizonLoading,
+    refreshHorizonOverview,
+    refreshMonthlyPlan,
+    refreshWeeklyPlan,
+    optimizeMonthlyAction,
+    runMonthlyLnsAction,
+    approveMonthlyAction,
+    optimizeWeeklyAction,
+    runWeeklyLnsAction,
+    approveWeeklyAction,
+    openTraceModal,
+    closeTraceModal,
+    checkDownstreamImpact,
+    closeImpactModal,
+    openReportsModal,
+    closeReportsModal,
   };
 
   return (

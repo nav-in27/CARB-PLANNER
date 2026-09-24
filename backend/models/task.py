@@ -91,3 +91,27 @@ class MaintenanceTask(BaseModel):
     requested_window_str: Optional[str] = None
     planned_block_str: Optional[str] = None
     image_url: Optional[str] = None
+
+    # Multi-Horizon Planning Extensions (Monthly -> Weekly -> Daily -> Operational)
+    monthly_plan_id: Optional[str] = None
+    preferred_week: Optional[int] = None  # 1, 2, 3, 4
+    monthly_status: Optional[str] = "PROPOSED"  # PROPOSED | PRIORITIZED | APPROVED | DEFERRED | COMPLETED | CANCELLED
+    weekly_plan_id: Optional[str] = None
+    planned_day: Optional[str] = None  # Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday
+    planned_window: Optional[str] = None  # e.g. "08:00–12:00"
+    weekly_status: Optional[str] = "CANDIDATE"  # CANDIDATE | PLANNED | APPROVED | RESCHEDULED | BLOCKED | COMPLETED
+    daily_plan_id: Optional[str] = None
+    daily_status: Optional[str] = "REQUESTED"  # REQUESTED | PLANNED | ACTIVE | COMPLETED | OVERRUN | REPLANNED | CANCELLED
+    required_resources: list[str] = Field(default_factory=list)  # e.g. ["ENG_CREW_01", "CSM_09_TAMP"]
+    required_possession_type: Optional[str] = None  # TOTAL_SHUTDOWN | POWER_OHE_ISOLATION | CAUTION_ORDER
+    affected_track_id: Optional[str] = None
+    expected_train_impact: Optional[int] = None
+    due_date: Optional[str] = None
+    maintenance_deadline: Optional[str] = None
+    bundling_partner_id: Optional[str] = None
+    is_joint_possession: bool = False
+    why_this_week: Optional[list[str]] = None
+    why_this_day: Optional[list[str]] = None
+    why_this_window: Optional[list[str]] = None
+    alias: Optional[str] = None  # e.g. "T01" for "ENG-014"
+

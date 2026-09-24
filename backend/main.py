@@ -63,6 +63,18 @@ from backend.optimizer.plan_diff import compare_plans
 from backend.optimizer.conflict_engine import ConflictEngine, ConflictReport
 from backend.optimizer.loop_allocator import LoopAllocator, LoopUtilizationReport
 from backend.simulation.railway_sim import compute_detailed_kpis, run_ablation_experiment
+from backend.models.horizon_plans import (
+    MonthlyPlan,
+    WeeklyPlan,
+    MultiHorizonOverview,
+    DownstreamImpactReport,
+    UpstreamImpactReport,
+    derive_horizon_calendar,
+)
+from backend.optimizer.horizon_coordinator import HorizonCoordinator
+from backend.optimizer.monthly_optimizer import optimize_monthly_plan, run_monthly_lns
+from backend.optimizer.weekly_optimizer import optimize_weekly_plan, run_weekly_lns
+
 
 # ─── Logging ───
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
@@ -138,9 +150,27 @@ class AppState:
         self.conflict_report: Optional[ConflictReport] = None
         self.loop_report: Optional[LoopUtilizationReport] = None
 
+        # Multi-Horizon Planning Coordinator
+        self.horizon_coordinator: Optional[HorizonCoordinator] = None
+
 state = AppState()
 
 # ─── Request/Response Models ───
+class MonthlyImpactRequest(BaseModel):
+    task_id: str
+    new_week: Optional[int] = None
+    new_day: Optional[str] = None
+
+class WeeklyImpactRequest(BaseModel):
+    task_id: str
+    new_day: Optional[str] = None
+    new_window: Optional[str] = None
+
+class HorizonApprovalRequest(BaseModel):
+    mode: str = "APPROVED"
+    notes: Optional[str] = ""
+    week_num: Optional[int] = 3
+
 class DefectRequest(BaseModel):
     section_id: str = Field("S03", description="Section to inject defect on")
     description: str = Field("Unexpected rail fracture detected", description="Defect description")
@@ -558,6 +588,19 @@ def _ensure_loaded():
         except Exception as e:
             logger.warning(f"Initial conflict evaluation: {e}")
 
+    if state.horizon_coordinator is None and state.network and state.tasks:
+        try:
+            state.horizon_coordinator = HorizonCoordinator(
+                network=state.network,
+                tasks=state.tasks,
+                timetable=state.timetable,
+                planning_date=state.planning_date,
+            )
+            state.horizon_coordinator.initialize_plans()
+        except Exception as e:
+            logger.warning(f"Initial horizon coordinator setup: {e}")
+
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -963,7 +1006,7 @@ async def planner_generate_alias(req: GeneratePlanRequest = GeneratePlanRequest(
 @app.post("/api/planner/replan")
 async def planner_replan_alias(req: ReplanRequest = ReplanRequest()):
     """Alias for /api/replan."""
-    return await execute_replan(req.time_limit_sec)
+    return await replan(req)
 
 
 @app.get("/api/network")
@@ -1625,6 +1668,14 @@ async def apply_disruption_endpoint(req: DisruptionApplyRequest):
         diff_summary=plan_diff,
     )
 
+    upstream_impact = None
+    if state.horizon_coordinator:
+        upstream_impact = state.horizon_coordinator.evaluate_upstream_impact(
+            disrupted_task_id=req.task_id or event.cancelled_task_id or "T_DISRUPT",
+            overrun_minutes=dur_val,
+            can_reschedule_within_week=(dur_val <= 180),
+        ).model_dump()
+
     return {
         "status": "applied",
         "version": version_entry.version_number,
@@ -1635,8 +1686,202 @@ async def apply_disruption_endpoint(req: DisruptionApplyRequest):
         "diff_summary": plan_diff,
         "plan": repaired_plan.model_dump(),
         "repair_info": repair_info,
+        "upstream_impact": upstream_impact,
         "message": f"Operational Plan updated to v{version_entry.version_number} via CP-SAT/LNS localized repair.",
     }
+
+
+# ─── MULTI-TIME-HORIZON PLANNING ENDPOINTS ───
+
+@app.get("/api/horizons/overview")
+async def get_horizon_overview():
+    """Get multi-horizon summary metrics for Monthly, Weekly, and Daily horizons."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    return state.horizon_coordinator.get_multi_horizon_overview().model_dump()
+
+
+@app.get("/api/horizons/monthly")
+async def get_monthly_plan():
+    """Get the current Monthly Maintenance Strategy Plan."""
+    _ensure_loaded()
+    if not state.horizon_coordinator or not state.horizon_coordinator.monthly_plan:
+        raise HTTPException(status_code=500, detail="Monthly plan not initialized.")
+    return state.horizon_coordinator.monthly_plan.model_dump()
+
+
+@app.post("/api/horizons/monthly/optimize")
+async def optimize_monthly():
+    """Run monthly maintenance placement optimization."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    state.horizon_coordinator.monthly_plan = optimize_monthly_plan(
+        tasks=state.tasks,
+        network=state.network,
+        month_str=state.horizon_coordinator.calendar_info["month_str"],
+        weekly_capacity_hours=56.0,
+        planning_date=state.planning_date,
+    )
+    return state.horizon_coordinator.monthly_plan.model_dump()
+
+
+@app.post("/api/horizons/monthly/lns")
+async def run_monthly_lns_endpoint(iterations: int = 10):
+    """Run Monthly Large Neighborhood Search (LNS) optimization."""
+    _ensure_loaded()
+    if not state.horizon_coordinator or not state.horizon_coordinator.monthly_plan:
+        raise HTTPException(status_code=500, detail="Monthly plan not initialized.")
+    result = run_monthly_lns(
+        initial_plan=state.horizon_coordinator.monthly_plan,
+        network=state.network,
+        max_iterations=iterations,
+    )
+    state.horizon_coordinator.monthly_plan = result.best_plan
+    return {
+        "status": result.status,
+        "iterations_run": result.iterations_run,
+        "improving_iterations": result.improving_iterations,
+        "initial_score": result.initial_score,
+        "best_score": result.best_score,
+        "plan": result.best_plan.model_dump(),
+    }
+
+
+@app.post("/api/horizons/monthly/approve")
+async def approve_monthly(req: HorizonApprovalRequest):
+    """Transition monthly plan approval workflow."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    plan = state.horizon_coordinator.approve_monthly_plan(mode=req.mode, notes=req.notes or "")
+    return plan.model_dump()
+
+
+@app.post("/api/horizons/monthly/impact")
+async def check_monthly_impact(req: MonthlyImpactRequest):
+    """Analyze downstream cascading impact of a monthly task reassignment."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    report = state.horizon_coordinator.compute_downstream_impact(
+        task_id=req.task_id,
+        new_week=req.new_week,
+        new_day=req.new_day,
+    )
+    return report.model_dump()
+
+
+@app.get("/api/horizons/weekly")
+async def get_weekly_plan(week_num: int = 3):
+    """Get the Weekly Possession Plan for a specific week."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    w_plan = state.horizon_coordinator.weekly_plans.get(week_num)
+    if not w_plan:
+        w_idx = min(week_num - 1, len(state.horizon_coordinator.calendar_info["weeks"]) - 1)
+        w_plan = optimize_weekly_plan(
+            monthly_plan=state.horizon_coordinator.monthly_plan,
+            week_num=week_num,
+            network=state.network,
+            timetable=state.timetable,
+            date_range_str=state.horizon_coordinator.calendar_info["weeks"][w_idx]["date_range"],
+        )
+        state.horizon_coordinator.weekly_plans[week_num] = w_plan
+    return w_plan.model_dump()
+
+
+@app.post("/api/horizons/weekly/optimize")
+async def optimize_weekly(week_num: int = 3):
+    """Run weekly possession optimization for a specific week."""
+    _ensure_loaded()
+    if not state.horizon_coordinator or not state.horizon_coordinator.monthly_plan:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    w_idx = min(week_num - 1, len(state.horizon_coordinator.calendar_info["weeks"]) - 1)
+    w_info = state.horizon_coordinator.calendar_info["weeks"][w_idx]
+    w_plan = optimize_weekly_plan(
+        monthly_plan=state.horizon_coordinator.monthly_plan,
+        week_num=week_num,
+        network=state.network,
+        timetable=state.timetable,
+        date_range_str=w_info["date_range"],
+    )
+    state.horizon_coordinator.weekly_plans[week_num] = w_plan
+    return w_plan.model_dump()
+
+
+@app.post("/api/horizons/weekly/lns")
+async def run_weekly_lns_endpoint(week_num: int = 3, iterations: int = 10):
+    """Run Weekly Large Neighborhood Search (LNS) optimization."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    w_plan = state.horizon_coordinator.weekly_plans.get(week_num)
+    if not w_plan:
+        raise HTTPException(status_code=404, detail=f"Weekly plan for week {week_num} not found.")
+    result = run_weekly_lns(
+        initial_plan=w_plan,
+        timetable=state.timetable,
+        network=state.network,
+        max_iterations=iterations,
+    )
+    state.horizon_coordinator.weekly_plans[week_num] = result.best_plan
+    return {
+        "status": result.status,
+        "iterations_run": result.iterations_run,
+        "improving_iterations": result.improving_iterations,
+        "initial_score": result.initial_score,
+        "best_score": result.best_score,
+        "plan": result.best_plan.model_dump(),
+    }
+
+
+@app.post("/api/horizons/weekly/approve")
+async def approve_weekly(req: HorizonApprovalRequest):
+    """Transition weekly plan approval workflow."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    plan = state.horizon_coordinator.approve_weekly_plan(
+        week_num=req.week_num or state.horizon_coordinator.current_week_num,
+        mode=req.mode,
+        notes=req.notes or "",
+    )
+    return plan.model_dump()
+
+
+@app.post("/api/horizons/weekly/impact")
+async def check_weekly_impact(req: WeeklyImpactRequest):
+    """Analyze downstream impact of moving a task's day or window in weekly plan."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    report = state.horizon_coordinator.compute_downstream_impact(
+        task_id=req.task_id,
+        new_day=req.new_day,
+    )
+    return report.model_dump()
+
+
+@app.get("/api/horizons/traceability/{task_id}")
+async def get_traceability(task_id: str):
+    """Get full 4-tier traceability across Monthly, Weekly, Daily, and Operational result."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    return state.horizon_coordinator.get_task_traceability(task_id)
+
+
+@app.get("/api/horizons/reports/{horizon}")
+async def get_horizon_report(horizon: str):
+    """Generate formal maintenance report for Monthly, Weekly, or Daily horizon."""
+    _ensure_loaded()
+    if not state.horizon_coordinator:
+        raise HTTPException(status_code=500, detail="Horizon coordinator not initialized.")
+    return state.horizon_coordinator.generate_report(horizon)
+
 
 
 @app.get("/api/scenario/versions")

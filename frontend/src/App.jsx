@@ -4,6 +4,12 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import OverviewTab from './components/OverviewTab';
 import BlockPlannerTab from './components/BlockPlannerTab';
+import MonthlyPlannerView from './components/MonthlyPlannerView';
+import WeeklyPlannerView from './components/WeeklyPlannerView';
+import MultiHorizonDashboard from './components/MultiHorizonDashboard';
+import TraceabilityModal from './components/TraceabilityModal';
+import DownstreamImpactModal from './components/DownstreamImpactModal';
+import HorizonReportsModal from './components/HorizonReportsModal';
 import MaintenanceQueueTab from './components/MaintenanceQueueTab';
 import NetworkTab from './components/NetworkTab';
 import DisruptionsTab from './components/DisruptionsTab';
@@ -15,7 +21,7 @@ import HumanApprovalModal from './components/HumanApprovalModal';
 function AppContent() {
   const [activeTab, setActiveTab] = useState('overview');
   const [approvalModalMode, setApprovalModalMode] = useState(null); // 'review' | 'approve' | 'override' | null
-  const { selectEntity, approvalStatus, replan, isLoading } = useScenario();
+  const { selectEntity, approvalStatus, replan, isLoading, activeHorizon } = useScenario();
 
   const handleOpenTaskDetail = (taskId) => {
     selectEntity('task', taskId, null);
@@ -37,6 +43,9 @@ function AppContent() {
           onResetDemo={replan}
         />
 
+        {/* Multi-Horizon Operational Dashboard Banner */}
+        <MultiHorizonDashboard onNavigateTab={setActiveTab} />
+
         {/* Dynamic Operational Screens */}
         {activeTab === 'overview' && (
           <OverviewTab
@@ -46,10 +55,16 @@ function AppContent() {
         )}
 
         {activeTab === 'planner' && (
-          <BlockPlannerTab
-            onOpenTaskDetail={handleOpenTaskDetail}
-            onApprovePlan={() => setApprovalModalMode('approve')}
-          />
+          <>
+            {activeHorizon === 'monthly' && <MonthlyPlannerView />}
+            {activeHorizon === 'weekly' && <WeeklyPlannerView />}
+            {activeHorizon === 'daily' && (
+              <BlockPlannerTab
+                onOpenTaskDetail={handleOpenTaskDetail}
+                onApprovePlan={() => setApprovalModalMode('approve')}
+              />
+            )}
+          </>
         )}
 
         {activeTab === 'queue' && (
@@ -82,6 +97,11 @@ function AppContent() {
           onClose={() => setApprovalModalMode(null)}
         />
       )}
+
+      {/* Multi-Horizon Modals */}
+      <TraceabilityModal />
+      <DownstreamImpactModal />
+      <HorizonReportsModal />
     </div>
   );
 }

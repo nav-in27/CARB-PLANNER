@@ -144,6 +144,12 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
     planDiff,
     changedObjectIds,
     isObjectChanged,
+    activeHorizon,
+    setActiveHorizon,
+    selectedWeekNum,
+    monthlyPlan,
+    weeklyPlan,
+    openTraceModal,
   } = useScenario();
 
   const [showDiffModal, setShowDiffModal] = useState(false);
@@ -517,6 +523,33 @@ export default function BlockPlannerTab({ onOpenTaskDetail, onApprovePlan, onPla
           <span>{toastMessage}</span>
         </div>
       )}
+
+      {/* Multi-Horizon Breadcrumb & Traceability Indicator */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', padding: '6px 12px', background: '#ffffff', border: '1px solid var(--border-color)', borderRadius: '6px', fontSize: '0.73rem' }}>
+        <span style={{ fontWeight: 700, color: 'var(--op-blue)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => setActiveHorizon('monthly')} title="Click to view Monthly Strategy">
+          <Calendar size={12} />
+          MONTH: {monthlyPlan?.monthly_plan_id || 'M-2026-09-v1'}
+        </span>
+        <span style={{ color: 'var(--text-muted)' }}>➔</span>
+        <span style={{ fontWeight: 700, color: 'var(--dept-eng)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }} onClick={() => setActiveHorizon('weekly')} title="Click to view Weekly Possession Plan">
+          <Layers size={12} />
+          WEEK {selectedWeekNum}: {weeklyPlan?.weekly_plan_id || `W-2026-09-W${selectedWeekNum}-v1`}
+        </span>
+        <span style={{ color: 'var(--text-muted)' }}>➔</span>
+        <span style={{ fontWeight: 800, color: 'var(--op-green)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <Clock size={12} />
+          DAILY OPERATIONAL: D-{ctxPlanningDate || '2026-09-18'}-v1 (15-min slots, Track 1/2)
+        </span>
+        <button
+          className="btn btn-sm"
+          style={{ marginLeft: 'auto', fontSize: '0.68rem', padding: '2px 8px' }}
+          onClick={() => openTraceModal('ENG-014')}
+          title="Trace ENG-014 across Monthly -> Weekly -> Daily -> Real-Time tiers"
+        >
+          <Search size={11} color="var(--op-blue)" />
+          <span>Trace Task (ENG-014)</span>
+        </button>
+      </div>
 
       {/* Page Title & Operational Status Row */}
       <div className="page-title-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem' }}>
